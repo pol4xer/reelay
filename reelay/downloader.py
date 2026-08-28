@@ -52,6 +52,7 @@ class InstagramDownloader:
             "mp4",
             "--remux-video",
             "mp4",
+            "--write-info-json",
             "--output",
             str(output),
             "--print",
@@ -77,12 +78,18 @@ class InstagramDownloader:
         if not video:
             raise RuntimeError("Downloaded file has no video stream")
 
+        needs_vertical_canvas = not self._is_9_16(video)
         video_copy = self._video_is_compatible(video)
         audio_copy = not audio or (
             audio.get("codec_name") == "aac"
             and str(audio.get("sample_rate")) == "48000"
         )
-        if source.suffix.lower() == ".mp4" and video_copy and audio_copy:
+        if (
+            source.suffix.lower() == ".mp4"
+            and not needs_vertical_canvas
+            and video_copy
+            and audio_copy
+        ):
             return source
 
         target = job_dir / "normalized.mp4"
@@ -94,16 +101,49 @@ class InstagramDownloader:
             "-y",
             "-i",
             str(source),
-            "-map",
-            "0:v:0",
-            "-map",
-            "0:a:0?",
         ]
-        if video_copy:
+        if needs_vertical_canvas:
+            ffmpeg.extend(
+                [
+                    "-filter_complex",
+                    (
+                        "[0:v:0]split=2[bgsrc][fgsrc];"
+                        "[bgsrc]scale=1080:1920:"
+                        "force_original_aspect_ratio=increase:"
+                        "force_divisible_by=2,crop=1080:1920,"
+                        "gblur=sigma=30,setsar=1[bg];"
+                        "[fgsrc]scale=1080:1920:"
+                        "force_original_aspect_ratio=decrease:"
+                        "force_divisible_by=2,setsar=1[fg];"
+                        "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,"
+                        "format=yuv420p[v]"
+                    ),
+                    "-map",
+                    "[v]",
+                    "-map",
+                    "0:a:0?",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "medium",
+                    "-crf",
+                    "18",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-r",
+                    "30",
+                ]
+            )
+        elif video_copy:
+            ffmpeg.extend(["-map", "0:v:0", "-map", "0:a:0?"])
             ffmpeg.extend(["-c:v", "copy"])
         else:
             ffmpeg.extend(
                 [
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0?",
                     "-c:v",
                     "libx264",
                     "-preset",
@@ -144,7 +184,10 @@ class InstagramDownloader:
                 "-v",
                 "error",
                 "-show_entries",
-                "stream=codec_type,codec_name,width,r_frame_rate,sample_rate",
+                (
+                    "stream=codec_type,codec_name,width,height,"
+                    "r_frame_rate,sample_rate"
+                ),
                 "-of",
                 "json",
                 str(path),
@@ -154,6 +197,14 @@ class InstagramDownloader:
             return json.loads(output).get("streams", [])
         except json.JSONDecodeError as error:
             raise RuntimeError("ffprobe returned invalid JSON") from error
+
+    @staticmethod
+    def _is_9_16(stream):
+        width = int(stream.get("width") or 0)
+        height = int(stream.get("height") or 0)
+        if not width or not height:
+            return False
+        return abs(width / height - 9 / 16) <= 0.02
 
     @staticmethod
     def _video_is_compatible(stream):
@@ -177,7 +228,8 @@ class InstagramDownloader:
         candidates = [
             path
             for path in job_dir.glob("video.*")
-            if path.is_file() and path.suffix not in {".part", ".ytdl"}
+            if path.is_file()
+            and path.suffix not in {".part", ".ytdl", ".json"}
         ]
         if not candidates:
             raise RuntimeError("yt-dlp finished without creating a video file")

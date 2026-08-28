@@ -49,6 +49,8 @@ class Settings:
         self.send_mp4_automatically = _bool("SEND_MP4_AUTOMATICALLY")
         self.allow_private_sources = _bool("ALLOW_PRIVATE_SOURCES")
         self.delete_after_publish = _bool("DELETE_AFTER_PUBLISH", "true")
+        self.auto_tags = _bool("AUTO_TAGS", "true")
+        self.auto_tag_count = int(os.getenv("AUTO_TAG_COUNT", "6"))
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.video_dir.mkdir(parents=True, exist_ok=True)

@@ -9,6 +9,7 @@ from .db import QueueDB
 from .downloader import InstagramDownloader
 from .instagram import InstagramPublisher
 from .scheduler import register_schedule
+from .tagger import AutoTagger
 
 
 def main():
@@ -29,6 +30,7 @@ def main():
             "db": db,
             "downloader": InstagramDownloader(settings),
             "publisher": InstagramPublisher(settings),
+            "tagger": AutoTagger(settings),
         }
     )
 

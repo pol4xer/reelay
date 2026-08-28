@@ -1,4 +1,5 @@
 import asyncio
+import re
 import shutil
 from datetime import datetime, time
 from pathlib import Path
@@ -43,7 +44,7 @@ async def publish_next(context):
 
         try:
             media_id = await publisher.publish(
-                job["video_path"], job.get("caption") or ""
+                job["video_path"], _publish_caption(job)
             )
         except Exception as exc:
             db.set_failed(job["id"], str(exc))
@@ -78,6 +79,18 @@ async def _notify_owner(context, settings, db, message):
     )
     if owner_id:
         await context.bot.send_message(chat_id=int(owner_id), text=message)
+
+
+def _publish_caption(job):
+    caption = (job.get("caption") or "").strip()
+    tags = (job.get("tags") or "").split()
+    existing = {
+        hashtag.casefold()
+        for hashtag in re.findall(r"(?<!\w)#[\w]+", caption, re.UNICODE)
+    }
+    tags = [tag for tag in tags if tag.casefold() not in existing]
+    tag_line = " ".join(tags)
+    return "\n\n".join(value for value in (caption, tag_line) if value)
 
 
 def _delete_job_video_directory(video_root, video_path):

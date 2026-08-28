@@ -24,6 +24,7 @@ class QueueDB:
                     source_url TEXT NOT NULL,
                     shortcode TEXT NOT NULL UNIQUE,
                     caption TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '',
                     video_path TEXT,
                     status TEXT NOT NULL CHECK (
                         status IN (
@@ -49,6 +50,17 @@ class QueueDB:
                 );
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(jobs)")
+            }
+            if "tags" not in columns:
+                connection.execute(
+                    """
+                    ALTER TABLE jobs
+                    ADD COLUMN tags TEXT NOT NULL DEFAULT ''
+                    """
+                )
             connection.commit()
         finally:
             connection.close()
@@ -140,14 +152,20 @@ class QueueDB:
         finally:
             connection.close()
 
-    def set_downloaded(self, job_id, path):
+    def set_downloaded(self, job_id, path, tags=""):
         return self._update(
             """
             UPDATE jobs
-            SET video_path = ?, status = 'queued', error = NULL
+            SET video_path = ?, tags = ?, status = 'queued', error = NULL
             WHERE id = ?
             """,
-            (str(path), job_id),
+            (str(path), str(tags or ""), job_id),
+        )
+
+    def set_tags(self, job_id, tags):
+        return self._update(
+            "UPDATE jobs SET tags = ? WHERE id = ?",
+            (str(tags or ""), job_id),
         )
 
     def set_caption(self, job_id, caption):

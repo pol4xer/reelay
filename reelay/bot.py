@@ -152,10 +152,14 @@ async def add_link(update, context):
 
     await update.effective_message.reply_text(f"Скачиваю #{job_id}…")
     downloader = context.application.bot_data["downloader"]
+    tagger = context.application.bot_data["tagger"]
     try:
         path = await downloader.download(job_id, source_url)
-        db.set_downloaded(job_id, path)
-        await update.effective_message.reply_text(f"В очереди: #{job_id}")
+        tags = await tagger.generate(path)
+        db.set_downloaded(job_id, path, tags)
+        await update.effective_message.reply_text(
+            _queued_message(job_id, tags)
+        )
     except Exception as error:
         db.set_failed(job_id, error)
         await update.effective_message.reply_text(
@@ -177,6 +181,8 @@ async def queue(update, context):
     rows = [f"Последние задания{paused}:"]
     for job in jobs:
         row = f"#{job['id']} · {job['status']} · {job['shortcode']}"
+        if job.get("tags"):
+            row += f"\n{_short_tags(job['tags'])}"
         if job["status"] == "failed" and job["error"]:
             row += f"\n{_short_error(job['error'], 160)}"
         rows.append(row)
@@ -257,11 +263,15 @@ async def retry(update, context):
 
     db.mark_downloading(job_id)
     downloader = context.application.bot_data["downloader"]
+    tagger = context.application.bot_data["tagger"]
     await update.effective_message.reply_text(f"Скачиваю #{job_id} заново…")
     try:
         path = await downloader.download(job_id, job["source_url"])
-        db.set_downloaded(job_id, path)
-        await update.effective_message.reply_text(f"В очереди: #{job_id}")
+        tags = await tagger.generate(path)
+        db.set_downloaded(job_id, path, tags)
+        await update.effective_message.reply_text(
+            _queued_message(job_id, tags)
+        )
     except Exception as error:
         db.set_failed(job_id, error)
         await update.effective_message.reply_text(
@@ -313,6 +323,20 @@ def _attach_pending_caption(context, caption):
 def _short_error(error, limit=700):
     text = str(error).strip() or error.__class__.__name__
     return text[-limit:]
+
+
+def _short_tags(tags, limit=180):
+    tags = str(tags).strip()
+    if len(tags) <= limit:
+        return tags
+    return tags[: limit - 1].rstrip() + "…"
+
+
+def _queued_message(job_id, tags):
+    message = f"В очереди: #{job_id}"
+    if tags:
+        message += f"\n{tags}"
+    return message
 
 
 def register_handlers(application):
