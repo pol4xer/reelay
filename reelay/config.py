@@ -46,6 +46,10 @@ class Settings:
         self.threads_api_version = os.getenv(
             "THREADS_API_VERSION", "v1.0"
         ).strip()
+        self.threads_app_id = os.getenv("THREADS_APP_ID", "").strip()
+        self.threads_app_secret = os.getenv(
+            "THREADS_APP_SECRET", ""
+        ).strip()
         self.threads_user_id = os.getenv("THREADS_USER_ID", "").strip()
         self.threads_access_token = os.getenv(
             "THREADS_ACCESS_TOKEN", ""

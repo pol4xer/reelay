@@ -4,6 +4,12 @@
 
 ## 1. Facebook Page
 
+Facebook Reels API публикует только в объект **Facebook Page**. Личный профиль
+`your personal Facebook profile` из Accounts Center не является Page, даже если на нём
+включён Professional mode, поэтому автоматически публиковать туда через Graph
+API нельзя. Для Reelay можно либо использовать активную Page `your Facebook Page`, либо
+переименовать/создать Page `your personal Facebook profile` и затем заменить Page ID/token.
+
 Что уже есть: Meta App `Reelay`, Page `your Facebook Page`, Page ID, App ID/Secret и текущий Page token. Не хватает права `pages_manage_posts`.
 
 1. Откройте [Meta App Dashboard](https://developers.facebook.com/apps/) и выберите `Reelay`.
@@ -35,10 +41,12 @@
 2. Откройте [Meta App Dashboard](https://developers.facebook.com/apps/).
 3. В `Reelay` попробуйте **Add use case → Access the Threads API**. Если Meta не предлагает добавить его в существующее приложение, создайте отдельное приложение `Reelay Threads` с этим use case.
 4. Откройте **Threads API → Settings** и скопируйте именно **Threads App ID** и **Threads App Secret**. Они отличаются от обычных Meta App credentials.
-5. В **App roles / Roles** добавьте свой Threads username как **Threads Tester**.
-6. В Threads откройте **Settings → Account → Website permissions → Tester invitations** и примите приглашение.
-7. Вернитесь в App Dashboard, откройте **Threads API → User Token Generator** и нажмите **Generate Token** напротив своего профиля.
-8. Разрешите:
+5. Откройте **Use cases → Access the Threads API → Customize → Settings**.
+6. Внизу, возле **User Token Generator**, нажмите **Add or Remove Threads Testers**.
+7. Нажмите **Add People**, выберите роль именно **Threads Tester**, введите username без `@` (`rbc_haze_harris`) и отправьте приглашение.
+8. Войдите в нужный Threads-аккаунт и откройте [Website permissions](https://www.threads.com/settings/website_permissions). На вкладке приглашений выберите приложение Reelay и нажмите **Accept**.
+9. Вернитесь в **Use cases → Access the Threads API → Customize → Settings**, обновите страницу и в **User Token Generator** нажмите **Generate Access Token** напротив `rbc_haze_harris`.
+10. Разрешите:
    - `threads_basic`
    - `threads_content_publish`
 
@@ -66,7 +74,7 @@ Codex определит Threads User ID, обменяет токен на long-
    - **Data Access**: добавьте scope `https://www.googleapis.com/auth/youtube.upload`.
 4. Откройте **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
 5. Выберите application type **Desktop app**, назовите `Reelay Local`.
-6. Скачайте JSON через **Download JSON**. Не открывайте и не копируйте отдельные поля вручную.
+6. Скачайте JSON через **Download JSON**. Если Client ID и Client Secret уже сохранены в Reelay, JSON повторно не нужен.
 7. Проверьте нужный канал в [YouTube Studio](https://studio.youtube.com/) и скопируйте URL или `@handle`.
 
 Что передать Codex:
