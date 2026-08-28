@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 from telegram.ext import CommandHandler, MessageHandler, filters
 
+from .scheduler import publish_next
+
 
 SHORTCODE = re.compile(r"^[A-Za-z0-9_-]+$")
 PATH_KINDS = {"p", "reel", "reels", "tv"}
@@ -100,6 +102,11 @@ async def add_link(update, context):
     first_line, separator, caption = text.partition("\n")
     parsed = _instagram_url(first_line)
     if not parsed:
+        if _attach_pending_caption(context, text):
+            await update.effective_message.reply_text(
+                "Caption добавлен к последнему видео."
+            )
+            return
         await update.effective_message.reply_text(
             "Первая строка должна быть одной ссылкой Instagram."
         )
@@ -112,6 +119,18 @@ async def add_link(update, context):
 
     existing = db.get_job_by_shortcode(shortcode)
     if existing:
+        if caption and db.set_caption(existing["id"], caption):
+            db.delete_setting("pending_caption_job_id")
+            await update.effective_message.reply_text(
+                f"Caption обновлён: #{existing['id']}"
+            )
+            return
+        if not caption and existing["status"] in {
+            "downloading",
+            "queued",
+            "failed",
+        }:
+            db.set_setting("pending_caption_job_id", existing["id"])
         await update.effective_message.reply_text(
             f"Уже есть: #{existing['id']} · {existing['status']}"
         )
@@ -125,6 +144,11 @@ async def add_link(update, context):
             f"Уже есть: #{existing['id']} · {existing['status']}"
         )
         return
+
+    if caption:
+        db.delete_setting("pending_caption_job_id")
+    else:
+        db.set_setting("pending_caption_job_id", job_id)
 
     await update.effective_message.reply_text(f"Скачиваю #{job_id}…")
     downloader = context.application.bot_data["downloader"]
@@ -259,6 +283,33 @@ async def resume(update, context):
     await update.effective_message.reply_text("Публикация возобновлена.")
 
 
+async def publish_now(update, context):
+    if not _authorized(update, context):
+        return
+    if not context.application.bot_data["db"].next_queued():
+        await update.effective_message.reply_text("Очередь пуста.")
+        return
+    await update.effective_message.reply_text("Публикую следующее видео…")
+    await publish_next(context)
+
+
+def _attach_pending_caption(context, caption):
+    db = context.application.bot_data["db"]
+    pending = db.get_setting("pending_caption_job_id")
+    if not pending or not str(pending).isdigit():
+        return False
+
+    job = db.get_job(int(pending))
+    if not job or job["status"] not in {"downloading", "queued", "failed"}:
+        db.delete_setting("pending_caption_job_id")
+        return False
+
+    if not db.set_caption(job["id"], caption):
+        return False
+    db.delete_setting("pending_caption_job_id")
+    return True
+
+
 def _short_error(error, limit=700):
     text = str(error).strip() or error.__class__.__name__
     return text[-limit:]
@@ -272,6 +323,7 @@ def register_handlers(application):
     application.add_handler(CommandHandler("retry", retry))
     application.add_handler(CommandHandler("pause", pause))
     application.add_handler(CommandHandler("resume", resume))
+    application.add_handler(CommandHandler("now", publish_now))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, add_link)
     )

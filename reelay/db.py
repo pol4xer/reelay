@@ -77,6 +77,9 @@ class QueueDB:
         finally:
             connection.close()
 
+    def delete_setting(self, key):
+        return self._update("DELETE FROM settings WHERE key = ?", (key,))
+
     def create_job(self, source_url, shortcode, caption):
         connection = self._connect()
         try:
@@ -147,6 +150,16 @@ class QueueDB:
             (str(path), job_id),
         )
 
+    def set_caption(self, job_id, caption):
+        return self._update(
+            """
+            UPDATE jobs SET caption = ?
+            WHERE id = ?
+              AND status IN ('downloading', 'queued', 'failed')
+            """,
+            (str(caption), job_id),
+        )
+
     def set_failed(self, job_id, error):
         return self._update(
             """
@@ -166,14 +179,28 @@ class QueueDB:
         )
 
     def mark_publishing(self, job_id):
-        return self._update(
-            """
-            UPDATE jobs
-            SET status = 'publishing', error = NULL
-            WHERE id = ? AND status = 'queued'
-            """,
-            (job_id,),
-        )
+        connection = self._connect()
+        try:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET status = 'publishing', error = NULL
+                WHERE id = ? AND status = 'queued'
+                """,
+                (job_id,),
+            )
+            if cursor.rowcount:
+                connection.execute(
+                    """
+                    DELETE FROM settings
+                    WHERE key = 'pending_caption_job_id' AND value = ?
+                    """,
+                    (str(job_id),),
+                )
+            connection.commit()
+            return cursor.rowcount > 0
+        finally:
+            connection.close()
 
     def mark_published(self, job_id, media_id):
         return self._update(
@@ -207,7 +234,23 @@ class QueueDB:
         )
 
     def delete_job(self, job_id):
-        return self._update("DELETE FROM jobs WHERE id = ?", (job_id,))
+        connection = self._connect()
+        try:
+            cursor = connection.execute(
+                "DELETE FROM jobs WHERE id = ?", (job_id,)
+            )
+            if cursor.rowcount:
+                connection.execute(
+                    """
+                    DELETE FROM settings
+                    WHERE key = 'pending_caption_job_id' AND value = ?
+                    """,
+                    (str(job_id),),
+                )
+            connection.commit()
+            return cursor.rowcount > 0
+        finally:
+            connection.close()
 
     def set_paused(self, paused):
         self.set_setting("paused", "1" if paused else "0")
