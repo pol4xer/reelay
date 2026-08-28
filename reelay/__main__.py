@@ -35,11 +35,11 @@ def main():
     )
 
     register_handlers(application)
-    register_schedule(application)
+    post_times = register_schedule(application)
 
     print(
         "Reelay started: "
-        + ", ".join(settings.post_times)
+        + ", ".join(post_times)
         + f" ({settings.timezone})"
     )
     application.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -1,11 +1,11 @@
 import asyncio
 import json
+import random
 import re
 import shutil
 from pathlib import Path
 
 
-DEFAULT_TAG_COUNT = 17
 HASHTAG = re.compile(r"(?<!\w)#[\w]+", re.UNICODE)
 CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\ud800-\udfff]")
 
@@ -19,6 +19,9 @@ BROAD_TAGS = (
     "#viral",
     "#trending",
     "#fyp",
+    "#reelsoftheday",
+    "#viralvideos",
+    "#reelsinstagram",
 )
 
 SAFE_FALLBACK = (
@@ -39,6 +42,11 @@ SAFE_FALLBACK = (
     "#dailyhumor",
     "#lol",
     "#entertainment",
+    "#funnyvideos",
+    "#reelsoftheday",
+    "#goodvibes",
+    "#viralvideos",
+    "#reelsdaily",
 )
 
 TOPICS = {
@@ -584,10 +592,10 @@ class AutoTagger:
     def __init__(self, settings):
         self.settings = settings
         self.enabled = getattr(settings, "auto_tags", True)
-        self.max_tags = max(
-            1,
-            int(getattr(settings, "auto_tag_count", DEFAULT_TAG_COUNT)),
-        )
+        self.min_tags = int(getattr(settings, "auto_tag_min", 15))
+        self.max_tags = int(getattr(settings, "auto_tag_max", 20))
+        if self.min_tags < 1 or self.min_tags > self.max_tags:
+            raise RuntimeError("Invalid auto tag range")
         self.swift_source = Path(__file__).with_name("vision_tags.swift")
         self.binary = settings.data_dir / "bin" / "reelay-vision"
         self._compile_lock = asyncio.Lock()
@@ -602,7 +610,7 @@ class AutoTagger:
         self._extend_unique(tags, source_tags)
         self._extend_unique(tags, HASHTAG.findall(str(context_text or "")))
         if len(tags) >= self.max_tags:
-            return " ".join(tags[: self.max_tags])
+            return self._render(tags)
 
         try:
             evidence = await self._vision_evidence(video_path)
@@ -640,7 +648,11 @@ class AutoTagger:
             self._extend_unique(tags, SAFE_FALLBACK)
 
         self._extend_unique(tags, SAFE_FALLBACK)
-        return " ".join(tags[: self.max_tags])
+        return self._render(tags)
+
+    def _render(self, tags):
+        count = random.randint(self.min_tags, self.max_tags)
+        return " ".join(tags[:count])
 
     def _source_data(self, job_dir):
         info_files = sorted(job_dir.glob("*.info.json"))

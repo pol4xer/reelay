@@ -40,17 +40,20 @@ class Settings:
 
         self.chrome_profile = os.getenv("CHROME_PROFILE", "Default").strip()
         self.timezone = os.getenv("TIMEZONE", "Europe/Istanbul").strip()
-        self.post_times = [
-            value.strip()
-            for value in os.getenv("POST_TIMES", "12:30,17:30,21:00").split(",")
-            if value.strip()
-        ]
+        self.posts_per_day = int(os.getenv("POSTS_PER_DAY", "5"))
+        self.post_window_start = os.getenv(
+            "POST_WINDOW_START", "09:00"
+        ).strip()
+        self.post_window_end = os.getenv(
+            "POST_WINDOW_END", "21:00"
+        ).strip()
         self.post_on_weekends = _bool("POST_ON_WEEKENDS", "true")
         self.send_mp4_automatically = _bool("SEND_MP4_AUTOMATICALLY")
         self.allow_private_sources = _bool("ALLOW_PRIVATE_SOURCES")
         self.delete_after_publish = _bool("DELETE_AFTER_PUBLISH", "true")
         self.auto_tags = _bool("AUTO_TAGS", "true")
-        self.auto_tag_count = int(os.getenv("AUTO_TAG_COUNT", "17"))
+        self.auto_tag_min = int(os.getenv("AUTO_TAG_MIN", "15"))
+        self.auto_tag_max = int(os.getenv("AUTO_TAG_MAX", "20"))
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.video_dir.mkdir(parents=True, exist_ok=True)

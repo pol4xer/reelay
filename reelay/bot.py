@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 
 from telegram.ext import CommandHandler, MessageHandler, filters
 
-from .scheduler import publish_next
+from .scheduler import current_schedule, publish_next, reschedule_posts
 
 
 SHORTCODE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -318,6 +318,33 @@ async def publish_now(update, context):
     await publish_next(context)
 
 
+async def posts(update, context):
+    if not _authorized(update, context):
+        return
+
+    application = context.application
+    if not context.args:
+        times = current_schedule(application)
+        await update.effective_message.reply_text(
+            _posts_message(len(times), times)
+        )
+        return
+
+    if (
+        len(context.args) != 1
+        or not context.args[0].isdigit()
+        or not 1 <= int(context.args[0]) <= 12
+    ):
+        await update.effective_message.reply_text(
+            "Использование: /posts N, где N от 1 до 12."
+        )
+        return
+
+    count = int(context.args[0])
+    times = reschedule_posts(application, count)
+    await update.effective_message.reply_text(_posts_message(count, times))
+
+
 async def _attach_pending_caption(context, caption):
     db = context.application.bot_data["db"]
     pending = db.get_setting("pending_caption_job_id")
@@ -371,6 +398,10 @@ def _caption_updated_message(job_id, tags):
     return message
 
 
+def _posts_message(count, times):
+    return f"Постов в день: {count}\nВремена: {', '.join(times)}"
+
+
 def register_handlers(application):
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("queue", queue))
@@ -380,6 +411,7 @@ def register_handlers(application):
     application.add_handler(CommandHandler("pause", pause))
     application.add_handler(CommandHandler("resume", resume))
     application.add_handler(CommandHandler("now", publish_now))
+    application.add_handler(CommandHandler("posts", posts))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, add_link)
     )
