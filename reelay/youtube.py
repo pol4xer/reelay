@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +15,11 @@ class YouTubePublisher:
 
     async def publish(self, video_path, caption="", source_title=""):
         video_path = Path(video_path)
+        duration = await asyncio.to_thread(self._duration, video_path)
+        if duration > 180.0:
+            raise RuntimeError(
+                f"YouTube Short длиннее 3 минут: {duration:.1f} сек"
+            )
         file_size = video_path.stat().st_size
         timeout = httpx.Timeout(300.0, connect=30.0)
 
@@ -30,7 +36,9 @@ class YouTubePublisher:
                     "selfDeclaredMadeForKids": False,
                 },
             }
-            started = await client.post(
+            started = await self._request(
+                client,
+                "POST",
                 "https://www.googleapis.com/upload/youtube/v3/videos",
                 params={
                     "uploadType": "resumable",
@@ -51,8 +59,11 @@ class YouTubePublisher:
                 raise RuntimeError("YouTube did not return a resumable upload URL")
 
             offset = 0
+            stalled = 0
             while offset < file_size:
-                uploaded = await client.put(
+                uploaded = await self._request(
+                    client,
+                    "PUT",
                     upload_url,
                     headers={
                         "Authorization": f"Bearer {access_token}",
@@ -75,20 +86,59 @@ class YouTubePublisher:
                 if uploaded.status_code != 308:
                     raise RuntimeError(self._response_error(uploaded))
                 received = uploaded.headers.get("range", "")
+                if not received:
+                    uploaded = await self._request(
+                        client,
+                        "PUT",
+                        upload_url,
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "Content-Length": "0",
+                            "Content-Range": f"bytes */{file_size}",
+                        },
+                        content=b"",
+                    )
+                    if uploaded.status_code in {200, 201}:
+                        try:
+                            video_id = uploaded.json().get("id")
+                        except ValueError as error:
+                            raise RuntimeError(
+                                "YouTube returned invalid JSON"
+                            ) from error
+                        if not video_id:
+                            raise RuntimeError(
+                                "YouTube did not return a video id"
+                            )
+                        return str(video_id)
+                    if uploaded.status_code != 308:
+                        raise RuntimeError(self._response_error(uploaded))
+                    received = uploaded.headers.get("range", "")
                 try:
-                    next_offset = int(received.rsplit("-", 1)[1]) + 1
+                    next_offset = (
+                        int(received.rsplit("-", 1)[1]) + 1
+                        if received
+                        else 0
+                    )
                 except (IndexError, ValueError) as error:
                     raise RuntimeError(
-                        "YouTube resumable upload returned no byte range"
+                        "YouTube resumable upload returned invalid byte range"
                     ) from error
                 if next_offset <= offset:
-                    raise RuntimeError("YouTube resumable upload made no progress")
+                    stalled += 1
+                    if stalled > 2:
+                        raise RuntimeError(
+                            "YouTube resumable upload made no progress"
+                        )
+                else:
+                    stalled = 0
                 offset = next_offset
 
         raise RuntimeError("YouTube upload did not complete")
 
     async def _access_token(self, client):
-        response = await client.post(
+        response = await self._request(
+            client,
+            "POST",
             "https://oauth2.googleapis.com/token",
             data={
                 "client_id": self.client_id,
@@ -106,6 +156,39 @@ class YouTubePublisher:
         if not access_token:
             raise RuntimeError("Google OAuth did not return an access token")
         return access_token
+
+    @staticmethod
+    async def _request(client, method, url, **kwargs):
+        try:
+            return await client.request(method, url, **kwargs)
+        except httpx.HTTPError as error:
+            raise RuntimeError(f"YouTube network error: {error}") from error
+
+    @staticmethod
+    def _duration(video_path):
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        try:
+            duration = float(result.stdout.strip())
+        except ValueError as error:
+            reason = result.stderr.strip() or "ffprobe did not return duration"
+            raise RuntimeError(reason[-700:]) from error
+        if duration <= 0:
+            raise RuntimeError("ffprobe returned invalid duration")
+        return duration
 
     @staticmethod
     def _title(source_title, caption):

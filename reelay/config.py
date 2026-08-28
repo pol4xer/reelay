@@ -62,6 +62,9 @@ class Settings:
         self.youtube_refresh_token = os.getenv(
             "YOUTUBE_REFRESH_TOKEN", ""
         ).strip()
+        self.youtube_channel_id = os.getenv(
+            "YOUTUBE_CHANNEL_ID", ""
+        ).strip()
         self.youtube_privacy_status = os.getenv(
             "YOUTUBE_PRIVACY_STATUS", "private"
         ).strip()
@@ -84,6 +87,7 @@ class Settings:
                     "YOUTUBE_CLIENT_ID": self.youtube_client_id,
                     "YOUTUBE_CLIENT_SECRET": self.youtube_client_secret,
                     "YOUTUBE_REFRESH_TOKEN": self.youtube_refresh_token,
+                    "YOUTUBE_CHANNEL_ID": self.youtube_channel_id,
                 },
             ),
         }

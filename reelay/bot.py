@@ -7,7 +7,13 @@ from urllib.parse import urlsplit
 from telegram import BotCommand, MenuButtonCommands
 from telegram.ext import CommandHandler, MessageHandler, filters
 
-from .scheduler import current_schedule, publish_next, reschedule_posts
+from .scheduler import (
+    _publish_caption,
+    current_schedule,
+    publish_next,
+    reschedule_posts,
+)
+from .youtube import YouTubePublisher
 
 
 SHORTCODE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -19,6 +25,7 @@ BOT_COMMANDS = [
     BotCommand("queue", "Показать очередь"),
     BotCommand("posts", "Показать или изменить постов в день"),
     BotCommand("now", "Опубликовать следующее видео сейчас"),
+    BotCommand("youtube", "Загрузить один приватный YouTube Short"),
     BotCommand("file", "Скачать MP4 по ID или shortcode"),
     BotCommand("drop", "Удалить по ID или shortcode"),
     BotCommand("retry", "Повторить failed по ID или shortcode"),
@@ -365,6 +372,72 @@ async def publish_now(update, context):
     await publish_next(context)
 
 
+async def youtube_test(update, context):
+    if not _authorized(update, context):
+        return
+
+    job = _job_from_args(context)
+    if not job:
+        await update.effective_message.reply_text(
+            "Использование: /youtube 33 или /youtube SHORTCODE"
+        )
+        return
+
+    if job.get("youtube_video_id"):
+        video_id = job["youtube_video_id"]
+        await update.effective_message.reply_text(
+            f"Уже загружено в YouTube: {video_id}\n"
+            f"https://youtu.be/{video_id}"
+        )
+        return
+
+    video_path = Path(job["video_path"]) if job.get("video_path") else None
+    if not video_path or not video_path.is_file():
+        await update.effective_message.reply_text("Локальный MP4 не найден.")
+        return
+
+    settings = context.application.bot_data["settings"]
+    missing = [
+        name
+        for name, value in (
+            ("YOUTUBE_CLIENT_ID", settings.youtube_client_id),
+            ("YOUTUBE_CLIENT_SECRET", settings.youtube_client_secret),
+            ("YOUTUBE_REFRESH_TOKEN", settings.youtube_refresh_token),
+        )
+        if not value
+    ]
+    if missing:
+        await update.effective_message.reply_text(
+            "YouTube OAuth не готов: " + ", ".join(missing)
+        )
+        return
+
+    await update.effective_message.reply_text(
+        f"Загружаю #{job['id']} в YouTube как private…"
+    )
+    publisher = YouTubePublisher(settings)
+    publisher.privacy_status = "private"
+    try:
+        video_id = await publisher.publish(
+            video_path,
+            _publish_caption(job),
+        )
+        db = context.application.bot_data["db"]
+        if not db.set_platform_media_id(job["id"], "youtube", video_id):
+            raise RuntimeError("YouTube ID не сохранился в очереди")
+    except Exception as error:
+        await update.effective_message.reply_text(
+            f"YouTube не загрузил #{job['id']}: {_short_error(error)}\n"
+            f"Источник: {job['source_url']}"
+        )
+        return
+
+    await update.effective_message.reply_text(
+        f"YouTube private готов: #{job['id']} · {video_id}\n"
+        f"https://youtu.be/{video_id}"
+    )
+
+
 async def posts(update, context):
     if not _authorized(update, context):
         return
@@ -479,6 +552,7 @@ def _help_message(times):
         "/queue — показать последние задания\n"
         "/posts [N] — показать расписание или задать 1–12 постов в день\n"
         "/now — опубликовать следующее видео сейчас\n"
+        "/youtube ID|SHORTCODE — приватно протестировать YouTube Short\n"
         "/file ID|SHORTCODE — отправить MP4 в Telegram\n"
         "/drop ID|SHORTCODE — удалить задание и локальный файл\n"
         "/retry ID|SHORTCODE — повторить failed\n"
@@ -498,6 +572,7 @@ def register_handlers(application):
     application.add_handler(CommandHandler("pause", pause))
     application.add_handler(CommandHandler("resume", resume))
     application.add_handler(CommandHandler("now", publish_now))
+    application.add_handler(CommandHandler("youtube", youtube_test))
     application.add_handler(CommandHandler("posts", posts))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, add_link)

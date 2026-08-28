@@ -74,17 +74,33 @@ Codex определит Threads User ID, обменяет токен на long-
    - **Data Access**: добавьте scope `https://www.googleapis.com/auth/youtube.upload`.
 4. Откройте **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
 5. Выберите application type **Desktop app**, назовите `Reelay Local`.
-6. Скачайте JSON через **Download JSON**. Если Client ID и Client Secret уже сохранены в Reelay, JSON повторно не нужен.
-7. Проверьте нужный канал в [YouTube Studio](https://studio.youtube.com/) и скопируйте URL или `@handle`.
+6. Скачайте JSON через **Download JSON** и скопируйте значения `client_id` и `client_secret` из секции `installed` в локальный `.env`:
 
-Что передать Codex:
+   ```dotenv
+   YOUTUBE_CLIENT_ID=...
+   YOUTUBE_CLIENT_SECRET=...
+   PUBLISH_YOUTUBE=false
+   ```
 
-```text
-Путь к скачанному OAuth client JSON:
-YouTube channel URL или @handle:
-```
+7. Из папки проекта запустите локальный OAuth bootstrap:
 
-Codex перенесёт JSON в игнорируемую папку проекта, запустит локальное OAuth-окно, а вы выберете нужный канал и нажмёте **Allow**. После этого refresh token сохранится только в `.env`.
+   ```bash
+   uv run python -m reelay.youtube_oauth
+   ```
+
+8. В системном браузере выберите нужный Google/YouTube account и нажмите **Allow**. Команда покажет имя и ID выбранного канала и попросит подтверждение. После подтверждения она атомарно сохранит `YOUTUBE_REFRESH_TOKEN` и `YOUTUBE_CHANNEL_ID` в локальный `.env`, не печатая секреты.
+9. Для строгой автоматической проверки заранее известного канала можно выполнить:
+
+   ```bash
+   uv run python -m reelay.youtube_oauth --expected-channel-id UCxxxxxxxx
+   ```
+
+10. После успешного bootstrap перезапустите Reelay и выполните в Telegram
+    `/youtube ID` для одного изолированного private-теста. Команда не публикует
+    ролик повторно в Instagram и не удаляет его из очереди.
+11. После успешного теста установите `PUBLISH_YOUTUBE=true` и снова перезапустите
+    Reelay. С этого момента общая очередь будет сохранять YouTube video ID и не
+    дублировать уже успешную загрузку при `/retry`.
 
 Первый тест будет `private`. Проекты YouTube API, не прошедшие compliance audit, принудительно оставляют API-загрузки приватными. Для публичных Shorts затем заполните [YouTube API Audit and Quota Extension Form](https://support.google.com/youtube/contact/yt_api_form). В форме укажите, что приложение локально загружает только авторизованный пользователем контент в его собственный канал через `videos.insert`.
 
@@ -102,6 +118,6 @@ Threads App ID:
 Threads App Secret:
 Threads User Access Token:
 
-YouTube OAuth JSON path:
-YouTube channel URL или @handle:
+YouTube OAuth: выполнен / не выполнен
+YouTube channel ID:
 ```
