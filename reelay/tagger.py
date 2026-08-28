@@ -869,7 +869,8 @@ class AutoTagger:
 
         candidates = list(lines)
         for index in range(len(lines) - 1):
-            combined = f"{lines[index]} {lines[index + 1]}"
+            separator = " — " if ":" in lines[index] else " "
+            combined = f"{lines[index]}{separator}{lines[index + 1]}"
             words = re.findall(r"[^\W_]+", combined, re.UNICODE)
             if len(words) <= 14 and len(combined) <= 100:
                 candidates.append(combined)
@@ -885,8 +886,6 @@ class AutoTagger:
 
     @staticmethod
     def _english_title_case(value):
-        if not value.isascii():
-            return value
         words = value.split()
         result = []
         for index, word in enumerate(words):
@@ -894,7 +893,15 @@ class AutoTagger:
             if index and plain in SMALL_TITLE_WORDS:
                 result.append(word.lower())
             else:
-                result.append(word[:1].upper() + word[1:].lower())
+                match = re.match(r"^([^A-Za-z]*)([A-Za-z])(.*)$", word)
+                if not match:
+                    result.append(word)
+                    continue
+                prefix, first, rest = match.groups()
+                if plain == "i":
+                    result.append(prefix + "I" + rest)
+                else:
+                    result.append(prefix + first.upper() + rest.lower())
         return " ".join(result)
 
     @staticmethod
