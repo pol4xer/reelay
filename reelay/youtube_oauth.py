@@ -17,7 +17,10 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
-SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+SCOPES = {
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+}
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
@@ -122,8 +125,11 @@ def _exchange_code(client, client_id, client_secret, code, verifier, redirect_ur
             "Google OAuth не вернул refresh token; отзовите старый доступ "
             "Reelay и повторите авторизацию"
         )
-    if SCOPE not in granted_scopes:
-        raise RuntimeError("Google не выдал scope youtube.upload")
+    missing_scopes = SCOPES - granted_scopes
+    if missing_scopes:
+        raise RuntimeError(
+            "Google не выдал scopes: " + ", ".join(sorted(missing_scopes))
+        )
     return access_token, refresh_token
 
 
@@ -224,7 +230,7 @@ def main():
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "response_type": "code",
-            "scope": SCOPE,
+            "scope": " ".join(sorted(SCOPES)),
             "access_type": "offline",
             "prompt": "consent select_account",
             "state": state,

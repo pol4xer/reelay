@@ -71,7 +71,10 @@ Codex определит Threads User ID, обменяет токен на long-
    - **Branding**: имя `Reelay`, ваш support email;
    - **Audience**: `External`;
    - **Test users**: добавьте Google email, которому принадлежит YouTube-канал;
-   - **Data Access**: добавьте scope `https://www.googleapis.com/auth/youtube.upload`.
+   - **Data Access**: добавьте scopes
+     `https://www.googleapis.com/auth/youtube.upload` и
+     `https://www.googleapis.com/auth/youtube.readonly`. Второй нужен только,
+     чтобы перед сохранением токена проверить название и ID выбранного канала.
 4. Откройте **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
 5. Выберите application type **Desktop app**, назовите `Reelay Local`.
 6. Скачайте JSON через **Download JSON** и скопируйте значения `client_id` и `client_secret` из секции `installed` в локальный `.env`:
