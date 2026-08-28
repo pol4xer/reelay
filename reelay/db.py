@@ -1,7 +1,6 @@
 import sqlite3
 from pathlib import Path
 
-
 PLATFORM_MEDIA_COLUMNS = {
     "instagram": "instagram_media_id",
     "facebook": "facebook_media_id",
@@ -49,6 +48,7 @@ class QueueDB:
                     facebook_media_id TEXT,
                     threads_media_id TEXT,
                     youtube_video_id TEXT,
+                    youtube_test_video_id TEXT,
                     error TEXT
                 );
 
@@ -59,23 +59,31 @@ class QueueDB:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS publish_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id INTEGER,
+                    outcome TEXT NOT NULL,
+                    platform TEXT,
+                    detail TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS publish_attempts_created
+                ON publish_attempts(id DESC);
                 """
             )
-            columns = {
-                row["name"]
-                for row in connection.execute("PRAGMA table_info(jobs)")
-            }
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(jobs)")}
             migrations = {
                 "tags": "TEXT NOT NULL DEFAULT ''",
                 "facebook_media_id": "TEXT",
                 "threads_media_id": "TEXT",
                 "youtube_video_id": "TEXT",
+                "youtube_test_video_id": "TEXT",
             }
             for column, declaration in migrations.items():
                 if column not in columns:
-                    connection.execute(
-                        f"ALTER TABLE jobs ADD COLUMN {column} {declaration}"
-                    )
+                    connection.execute(f"ALTER TABLE jobs ADD COLUMN {column} {declaration}")
             connection.commit()
         finally:
             connection.close()
@@ -83,9 +91,7 @@ class QueueDB:
     def get_setting(self, key, default=None):
         connection = self._connect()
         try:
-            row = connection.execute(
-                "SELECT value FROM settings WHERE key = ?", (key,)
-            ).fetchone()
+            row = connection.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
             return row["value"] if row else default
         finally:
             connection.close()
@@ -125,9 +131,7 @@ class QueueDB:
     def get_job(self, job_id):
         connection = self._connect()
         try:
-            row = connection.execute(
-                "SELECT * FROM jobs WHERE id = ?", (job_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
             return dict(row) if row else None
         finally:
             connection.close()
@@ -152,6 +156,14 @@ class QueueDB:
         finally:
             connection.close()
 
+    def all_jobs(self):
+        connection = self._connect()
+        try:
+            rows = connection.execute("SELECT * FROM jobs ORDER BY id").fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            connection.close()
+
     def next_queued(self):
         connection = self._connect()
         try:
@@ -171,7 +183,8 @@ class QueueDB:
         return self._update(
             """
             UPDATE jobs
-            SET video_path = ?, tags = ?, status = 'queued', error = NULL
+            SET video_path = ?, tags = ?, status = 'queued',
+                published_at = NULL, error = NULL
             WHERE id = ?
             """,
             (str(path), str(tags or ""), job_id),
@@ -205,7 +218,7 @@ class QueueDB:
         return self._update(
             """
             UPDATE jobs
-            SET status = 'downloading', error = NULL
+            SET status = 'downloading', published_at = NULL, error = NULL
             WHERE id = ? AND status = 'failed'
             """,
             (job_id,),
@@ -265,6 +278,23 @@ class QueueDB:
             (str(media_id), job_id),
         )
 
+    def clear_platform_media_id(self, job_id, platform):
+        column = PLATFORM_MEDIA_COLUMNS.get(platform)
+        if not column:
+            raise ValueError(f"Unsupported platform: {platform}")
+        return self._update(
+            f"UPDATE jobs SET {column} = NULL WHERE id = ?",
+            (job_id,),
+        )
+
+    def set_youtube_test_video_id(self, job_id, video_id):
+        if video_id is None or not str(video_id).strip():
+            raise ValueError("Missing YouTube test video id")
+        return self._update(
+            "UPDATE jobs SET youtube_test_video_id = ? WHERE id = ?",
+            (str(video_id), job_id),
+        )
+
     def mark_completed(self, job_id):
         return self._update(
             """
@@ -289,7 +319,7 @@ class QueueDB:
         return self._update(
             """
             UPDATE jobs
-            SET status = 'queued', error = NULL
+            SET status = 'queued', published_at = NULL, error = NULL
             WHERE id = ? AND status = 'failed'
             """,
             (job_id,),
@@ -298,9 +328,7 @@ class QueueDB:
     def delete_job(self, job_id):
         connection = self._connect()
         try:
-            cursor = connection.execute(
-                "DELETE FROM jobs WHERE id = ?", (job_id,)
-            )
+            cursor = connection.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
             if cursor.rowcount:
                 connection.execute(
                     """
@@ -319,6 +347,159 @@ class QueueDB:
 
     def is_paused(self):
         return self.get_setting("paused", "0") == "1"
+
+    def count_jobs(self, status=None):
+        connection = self._connect()
+        try:
+            if status is None:
+                row = connection.execute("SELECT COUNT(*) AS count FROM jobs").fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT COUNT(*) AS count FROM jobs WHERE status = ?",
+                    (status,),
+                ).fetchone()
+            return int(row["count"])
+        finally:
+            connection.close()
+
+    def record_publish_attempt(
+        self,
+        job_id,
+        outcome,
+        platform=None,
+        detail="",
+    ):
+        connection = self._connect()
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO publish_attempts(job_id, outcome, platform, detail)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    int(job_id) if job_id is not None else None,
+                    str(outcome),
+                    str(platform) if platform else None,
+                    str(detail or "")[-2000:],
+                ),
+            )
+            connection.commit()
+            return cursor.lastrowid
+        finally:
+            connection.close()
+
+    def latest_publish_attempt(self):
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT * FROM publish_attempts ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            connection.close()
+
+    def has_publish_attempt_since(self, timestamp):
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM publish_attempts WHERE created_at >= ?
+                ) AS found
+                """,
+                (str(timestamp),),
+            ).fetchone()
+            return bool(row["found"])
+        finally:
+            connection.close()
+
+    def recover_interrupted_jobs(self):
+        connection = self._connect()
+        try:
+            interrupted_downloads = [
+                row["id"]
+                for row in connection.execute(
+                    "SELECT id FROM jobs WHERE status = 'downloading'"
+                ).fetchall()
+            ]
+            if interrupted_downloads:
+                connection.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'failed',
+                        error = 'Download was interrupted; retry is required'
+                    WHERE status = 'downloading'
+                    """
+                )
+
+            rows = connection.execute(
+                "SELECT id, video_path FROM jobs WHERE status = 'publishing'"
+            ).fetchall()
+            recovered = []
+            failed = []
+            for row in rows:
+                video_path = row["video_path"]
+                if video_path and Path(video_path).is_file():
+                    connection.execute(
+                        """
+                        UPDATE jobs
+                        SET status = 'queued',
+                            error = 'Recovered after interrupted process'
+                        WHERE id = ? AND status = 'publishing'
+                        """,
+                        (row["id"],),
+                    )
+                    recovered.append(row["id"])
+                else:
+                    connection.execute(
+                        """
+                        UPDATE jobs
+                        SET status = 'failed',
+                            error = 'Interrupted process and local MP4 is missing'
+                        WHERE id = ? AND status = 'publishing'
+                        """,
+                        (row["id"],),
+                    )
+                    failed.append(row["id"])
+            connection.commit()
+            return {
+                "requeued": recovered,
+                "failed": failed,
+                "downloads_failed": interrupted_downloads,
+            }
+        finally:
+            connection.close()
+
+    def reconcile_incomplete_published(self, required_platforms):
+        columns = []
+        for platform in required_platforms:
+            column = PLATFORM_MEDIA_COLUMNS.get(str(platform))
+            if not column:
+                raise ValueError(f"Unsupported platform: {platform}")
+            columns.append((str(platform), column))
+
+        connection = self._connect()
+        try:
+            rows = connection.execute("SELECT * FROM jobs WHERE status = 'published'").fetchall()
+            incomplete = {}
+            for row in rows:
+                missing = [platform for platform, column in columns if not row[column]]
+                if not missing:
+                    continue
+                detail = "Missing platform checkpoints: " + ", ".join(missing)
+                connection.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'failed', published_at = NULL, error = ?
+                    WHERE id = ? AND status = 'published'
+                    """,
+                    (detail, row["id"]),
+                )
+                incomplete[row["id"]] = missing
+            connection.commit()
+            return incomplete
+        finally:
+            connection.close()
 
     def _update(self, query, parameters):
         connection = self._connect()

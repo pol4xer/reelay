@@ -5,7 +5,6 @@ import re
 import shutil
 from pathlib import Path
 
-
 HASHTAG = re.compile(r"(?<!\w)#[\w]+", re.UNICODE)
 CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\ud800-\udfff]")
 
@@ -649,7 +648,11 @@ SPECIAL_TAGS = (
         ("heartbreak", "breakup", "расставан*"),
         ("#heartbreak", "#breakup", "#healing", "#movingon"),
     ),
-    ("pets", ("dog", "dogs", "puppy", "собака", "щенок", "köpek"), ("#dogsofinstagram", "#dogreels")),
+    (
+        "pets",
+        ("dog", "dogs", "puppy", "собака", "щенок", "köpek"),
+        ("#dogsofinstagram", "#dogreels"),
+    ),
     ("pets", ("cat", "cats", "kitten", "кот", "кошка", "kedi"), ("#catsofinstagram", "#catreels")),
 )
 
@@ -691,8 +694,7 @@ class AutoTagger:
             top_topic = ranked_topics[0][0]
             for topic_name, keywords, special_tags in SPECIAL_TAGS:
                 if topic_name == top_topic and any(
-                    self._matches(combined_text, keyword)
-                    for keyword in keywords
+                    self._matches(combined_text, keyword) for keyword in keywords
                 ):
                     self._extend_unique(tags, special_tags)
 
@@ -730,16 +732,10 @@ class AutoTagger:
 
         ocr_title = self._ocr_title(evidence)
         if ocr_title:
-            return self._finish_title(
-                self._english_title_case(ocr_title)
-            )
+            return self._finish_title(self._english_title_case(ocr_title))
 
-        description, source_title = self._source_title_fields(
-            video_path.parent
-        )
-        source_candidate = self._source_title_candidate(
-            description, source_title
-        )
+        description, source_title = self._source_title_fields(video_path.parent)
+        source_candidate = self._source_title_candidate(description, source_title)
         visual_topics, _ = self._rank_topics("", "", evidence)
         source_topics, _ = self._rank_topics(
             "",
@@ -747,9 +743,7 @@ class AutoTagger:
             {"labels": [], "texts": []},
         )
         topics_conflict = (
-            visual_topics
-            and source_topics
-            and visual_topics[0][0] != source_topics[0][0]
+            visual_topics and source_topics and visual_topics[0][0] != source_topics[0][0]
         )
         if source_candidate and not topics_conflict:
             return self._finish_title(source_candidate)
@@ -757,16 +751,10 @@ class AutoTagger:
         evidence_text = " ".join(
             [
                 *(str(text) for text in evidence.get("texts", [])),
-                *(
-                    str(item.get("label") or "")
-                    for item in evidence.get("labels", [])
-                ),
+                *(str(item.get("label") or "") for item in evidence.get("labels", [])),
             ]
         )
-        if any(
-            self._matches(evidence_text, value)
-            for value in ("child", "baby", "kid")
-        ):
+        if any(self._matches(evidence_text, value) for value in ("child", "baby", "kid")):
             return "That Reaction Says Everything"
 
         if visual_topics:
@@ -817,10 +805,7 @@ class AutoTagger:
         for line in lines:
             if len(line.strip()) > 90:
                 continue
-            if any(
-                term.casefold() in line.casefold()
-                for term in SOURCE_PROMO_TERMS
-            ):
+            if any(term.casefold() in line.casefold() for term in SOURCE_PROMO_TERMS):
                 continue
             candidate = self._title_candidate(line, source=True)
             if candidate:
@@ -912,9 +897,7 @@ class AutoTagger:
         if len(value) <= 70:
             return value
 
-        sentence_end = max(
-            value.rfind(mark, 0, 71) for mark in (".", "!", "?")
-        )
+        sentence_end = max(value.rfind(mark, 0, 71) for mark in (".", "!", "?"))
         if sentence_end >= 35:
             return value[: sentence_end + 1].strip()
         word_end = value.rfind(" ", 0, 71)
@@ -941,9 +924,7 @@ class AutoTagger:
 
     def _rank_topics(self, context_text, source_text, evidence):
         ocr = "\n".join(
-            str(text).strip()
-            for text in evidence.get("texts", [])
-            if str(text).strip()
+            str(text).strip() for text in evidence.get("texts", []) if str(text).strip()
         )
         labels = " ".join(
             str(item.get("label") or "")
@@ -961,10 +942,7 @@ class AutoTagger:
         for order, (name, topic) in enumerate(TOPICS.items()):
             score = 0
             for text, weight in sources:
-                matches = sum(
-                    self._matches(text, keyword)
-                    for keyword in topic["keywords"]
-                )
+                matches = sum(self._matches(text, keyword) for keyword in topic["keywords"])
                 score += min(matches, 4) * weight
             if score:
                 scores.append((name, score, order))
@@ -989,10 +967,7 @@ class AutoTagger:
         if CJK.search(normalized_keyword):
             return normalized_keyword in normalized_text
         if prefix:
-            return any(
-                word.startswith(normalized_keyword)
-                for word in normalized_text.split()
-            )
+            return any(word.startswith(normalized_keyword) for word in normalized_text.split())
         if " " in normalized_keyword:
             return f" {normalized_keyword} " in f" {normalized_text} "
         return normalized_keyword in normalized_text.split()

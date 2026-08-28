@@ -1,19 +1,20 @@
 import asyncio
-from pathlib import Path
 
 import httpx
 
+from .contract import Platform, PublishRequest, PublishResult
+
 
 class InstagramPublisher:
+    platform = Platform.INSTAGRAM
+
     def __init__(self, settings):
-        self.api_base = (
-            f"https://graph.facebook.com/{settings.meta_api_version}"
-        )
+        self.api_base = f"https://graph.facebook.com/{settings.meta_api_version}"
         self.ig_user_id = settings.meta_ig_user_id
         self.access_token = settings.meta_page_access_token
 
-    async def publish(self, video_path, caption=""):
-        video_path = Path(video_path)
+    async def publish(self, request: PublishRequest) -> PublishResult:
+        video_path = request.video_path
         file_size = video_path.stat().st_size
 
         timeout = httpx.Timeout(300.0, connect=30.0)
@@ -26,7 +27,7 @@ class InstagramPublisher:
                     "access_token": self.access_token,
                     "media_type": "REELS",
                     "upload_type": "resumable",
-                    "caption": caption or "",
+                    "caption": request.caption,
                     "share_to_feed": "true",
                 },
             )
@@ -34,9 +35,7 @@ class InstagramPublisher:
             container_id = container.get("id")
             upload_uri = container.get("uri")
             if not container_id or not upload_uri:
-                raise RuntimeError(
-                    "Meta did not return a container id and upload URI"
-                )
+                raise RuntimeError("Meta did not return a container id and upload URI")
 
             upload = await self._request_json(
                 client,
@@ -69,7 +68,10 @@ class InstagramPublisher:
             media_id = published.get("id")
             if not media_id:
                 raise RuntimeError("Meta did not return a published media id")
-            return media_id
+            return PublishResult(
+                platform=self.platform,
+                media_id=media_id,
+            )
 
     async def _wait_until_ready(self, client, container_id):
         loop = asyncio.get_running_loop()
@@ -90,15 +92,12 @@ class InstagramPublisher:
                 return
             if status_code in {"ERROR", "EXPIRED"}:
                 raise RuntimeError(
-                    status.get("status")
-                    or f"Meta container status is {status_code}"
+                    status.get("status") or f"Meta container status is {status_code}"
                 )
 
             remaining = deadline - loop.time()
             if remaining <= 0:
-                raise RuntimeError(
-                    "Meta did not finish processing the video within 5 minutes"
-                )
+                raise RuntimeError("Meta did not finish processing the video within 5 minutes")
             await asyncio.sleep(min(10, remaining))
 
     @staticmethod
@@ -130,9 +129,5 @@ class InstagramPublisher:
     def _error_message(payload):
         error = payload.get("error", payload)
         if isinstance(error, dict):
-            return (
-                error.get("error_user_msg")
-                or error.get("message")
-                or str(error)
-            )
+            return error.get("error_user_msg") or error.get("message") or str(error)
         return str(error)

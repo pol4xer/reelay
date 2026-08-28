@@ -2,11 +2,11 @@
 
 Локальный Telegram-бот: скачивает Instagram-видео, кладёт их в FIFO-очередь и публикует Reels по расписанию через официальный Meta API.
 
-## Запуск
+## Установка и ручной запуск
 
 ```bash
-uv sync
-uv run python -m reelay
+make install
+make run
 ```
 
 При первом запуске владелец с Telegram username из `TELEGRAM_OWNER_USERNAME` отправляет `/start`; бот сохраняет numeric user ID и после этого игнорирует остальных.
@@ -30,6 +30,79 @@ https://www.instagram.com/reel/SHORTCODE/
 
 Facebook Page, Threads и YouTube publishers уже подключены к общей очереди, но по умолчанию выключены. Каждый внешний media ID сохраняется сразу: если одна платформа упала, `/retry` продолжит с неё и не продублирует уже успешные публикации. Настройка credentials: [`docs/CROSSPOSTING_SETUP.md`](docs/CROSSPOSTING_SETUP.md).
 
-Команды: `/help`, `/queue`, `/file ID`, `/drop ID`, `/retry ID`, `/now`, `/posts N`, `/pause`, `/resume`.
+Команды: `/help`, `/status`, `/queue`, `/file ID`, `/drop ID`, `/retry ID`, `/now`, `/posts N`, `/pause`, `/resume`.
 
-Локальный процесс должен работать в моменты публикации. Пропущенные во время остановки слоты не догоняются.
+## Структура приложения
+
+Код разделён по одной ответственности:
+
+- `reelay/app.py` — сборка приложения и зависимостей;
+- `reelay/bot.py` — только Telegram UI и команды;
+- `reelay/downloader.py` — получение и нормализация Instagram MP4;
+- `reelay/publishers/` — отдельный uploader для Instagram, Facebook, Threads и YouTube;
+- `reelay/publishers/contract.py` — единый строгий `PublishRequest → PublishResult`;
+- `reelay/services/publishing.py` — очередь, порядок платформ и checkpoints;
+- `reelay/scheduler.py` — только расчёт времени и запуск publishing service;
+- `reelay/media/` — подготовка платформо-специфичного видео;
+- `reelay/transports/` — временный Cloudflare Quick Tunnel;
+- `reelay/db.py` — SQLite persistence и журнал publish attempts.
+
+Статус `published` выставляется только после сохранения ID всех включённых платформ. Если процесс
+прервался, незавершённое задание возвращается в очередь при следующем старте.
+
+## Форматирование и проверки
+
+```bash
+make format
+make check
+make queue-audit
+```
+
+`make format` применяет Ruff ко всему Python-коду. `make check` проверяет lint и форматирование,
+компилируемость Python, shell script и LaunchAgent plist; type-check и тесты не запускаются.
+`make queue-audit` сверяет SQLite checkpoints, наличие файлов и ffprobe metadata всех ожидающих
+MP4.
+
+## Автозапуск на macOS
+
+Reelay может работать как пользовательский macOS LaunchAgent и не зависит от запущенного
+Terminal, Codex или ChatGPT:
+
+```bash
+make service-install
+make service-status
+```
+
+`service-install` создаёт `~/Library/LaunchAgents/com.pol4xer.reelay.plist`, запускает Reelay
+с помощью `.venv/bin/python -m reelay` и включает:
+
+- запуск после входа пользователя в macOS;
+- автоматический перезапуск процесса через `KeepAlive`;
+- продолжение работы после выхода из Codex;
+- запись stdout в `data/logs/reelay.log`, stderr — в `data/logs/reelay.error.log`.
+
+Управление процессом:
+
+```bash
+make service-start
+make service-stop
+make service-status
+make service-uninstall
+```
+
+Reelay держит process lock в `data/reelay.lock`, поэтому второй ручной или системный экземпляр
+не сможет одновременно менять очередь и создавать дубли. `service-start` также отказывается
+прерывать задание со статусом `publishing`. Файл `.env` остаётся в корне проекта и не копируется
+в LaunchAgent.
+
+При закрытой крышке Mac обычно засыпает, поэтому Reelay не исполняется до пробуждения. После
+пробуждения уже запущенный процесс продолжит работу; после перезагрузки LaunchAgent стартует при
+следующем входе пользователя. APScheduler догоняет слот только в течение
+`SCHEDULE_GRACE_MINUTES` (по умолчанию 30 минут); более старый пропуск не создаёт несколько
+публикаций подряд.
+
+При холодном старте Reelay отдельно проверяет последний слот: если он был не больше
+`SCHEDULE_GRACE_MINUTES` назад и в журнале нет попытки, создаётся ровно один catch-up запуск.
+
+LaunchAgent относится только к локальному macOS-запуску. Серверный деплой позднее сможет
+использовать тот же стабильный entrypoint `python -m reelay`, не меняя код приложения.

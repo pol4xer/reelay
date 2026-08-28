@@ -1,19 +1,20 @@
 import asyncio
-from pathlib import Path
 
 import httpx
 
+from .contract import Platform, PublishRequest, PublishResult
+
 
 class FacebookPublisher:
+    platform = Platform.FACEBOOK
+
     def __init__(self, settings):
-        self.api_base = (
-            f"https://graph.facebook.com/{settings.meta_api_version}"
-        )
+        self.api_base = f"https://graph.facebook.com/{settings.meta_api_version}"
         self.page_id = settings.meta_page_id
         self.access_token = settings.meta_page_access_token
 
-    async def publish(self, video_path, caption=""):
-        video_path = Path(video_path)
+    async def publish(self, request: PublishRequest) -> PublishResult:
+        video_path = request.video_path
         file_size = video_path.stat().st_size
         timeout = httpx.Timeout(300.0, connect=30.0)
 
@@ -30,9 +31,7 @@ class FacebookPublisher:
             video_id = started.get("video_id")
             upload_url = started.get("upload_url")
             if not video_id or not upload_url:
-                raise RuntimeError(
-                    "Facebook did not return video_id and upload_url"
-                )
+                raise RuntimeError("Facebook did not return video_id and upload_url")
 
             uploaded = await self._request_json(
                 client,
@@ -59,12 +58,16 @@ class FacebookPublisher:
                     "upload_phase": "finish",
                     "video_id": video_id,
                     "video_state": "PUBLISHED",
-                    "description": caption or "",
+                    "description": request.caption,
                 },
             )
             if finished.get("success") is False:
                 raise RuntimeError(self._error_message(finished))
-            return str(video_id)
+            return PublishResult(
+                platform=self.platform,
+                media_id=video_id,
+                permalink=f"https://www.facebook.com/reel/{video_id}/",
+            )
 
     @staticmethod
     async def _read_file(video_path):
@@ -93,9 +96,5 @@ class FacebookPublisher:
     def _error_message(payload):
         error = payload.get("error", payload)
         if isinstance(error, dict):
-            return str(
-                error.get("error_user_msg")
-                or error.get("message")
-                or error
-            )[-700:]
+            return str(error.get("error_user_msg") or error.get("message") or error)[-700:]
         return str(error)[-700:]

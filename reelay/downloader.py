@@ -90,8 +90,7 @@ class InstagramDownloader:
         needs_vertical_canvas = not self._is_9_16(video)
         video_copy = self._video_is_compatible(video)
         audio_copy = not audio or (
-            audio.get("codec_name") == "aac"
-            and str(audio.get("sample_rate")) == "48000"
+            audio.get("codec_name") == "aac" and str(audio.get("sample_rate")) == "48000"
         )
         if (
             source.suffix.lower() == ".mp4"
@@ -173,9 +172,7 @@ class InstagramDownloader:
         elif audio_copy:
             ffmpeg.extend(["-c:a", "copy"])
         else:
-            ffmpeg.extend(
-                ["-c:a", "aac", "-ar", "48000", "-b:a", "128k"]
-            )
+            ffmpeg.extend(["-c:a", "aac", "-ar", "48000", "-b:a", "128k"])
 
         ffmpeg.extend(["-movflags", "+faststart", str(target)])
         await self._run(ffmpeg)
@@ -193,10 +190,7 @@ class InstagramDownloader:
                 "-v",
                 "error",
                 "-show_entries",
-                (
-                    "stream=codec_type,codec_name,width,height,"
-                    "r_frame_rate,sample_rate"
-                ),
+                ("stream=codec_type,codec_name,width,height,r_frame_rate,sample_rate"),
                 "-of",
                 "json",
                 str(path),
@@ -237,8 +231,7 @@ class InstagramDownloader:
         candidates = [
             path
             for path in job_dir.glob("video.*")
-            if path.is_file()
-            and path.suffix not in {".part", ".ytdl", ".json"}
+            if path.is_file() and path.suffix not in {".part", ".ytdl", ".json"}
         ]
         if not candidates:
             raise RuntimeError("yt-dlp finished without creating a video file")

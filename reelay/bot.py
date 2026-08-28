@@ -1,3 +1,4 @@
+import logging
 import re
 import shutil
 import sqlite3
@@ -5,24 +6,27 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from telegram import BotCommand, MenuButtonCommands
+from telegram.error import TelegramError
 from telegram.ext import CommandHandler, MessageHandler, filters
 
+from .publishers import PublishRequest, YouTubePublisher
 from .scheduler import (
-    _publish_caption,
     current_schedule,
+    next_scheduled_at,
     publish_next,
     reschedule_posts,
 )
-from .youtube import YouTubePublisher
-
+from .services import compose_caption
 
 SHORTCODE = re.compile(r"^[A-Za-z0-9_-]+$")
+LOGGER = logging.getLogger(__name__)
 PATH_KINDS = {"p", "reel", "reels", "tv"}
 MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024
 BOT_COMMANDS = [
     BotCommand("start", "Подключить или проверить бота"),
     BotCommand("help", "Показать инструкцию и команды"),
     BotCommand("queue", "Показать очередь"),
+    BotCommand("status", "Показать состояние сервиса"),
     BotCommand("posts", "Показать или изменить постов в день"),
     BotCommand("now", "Опубликовать следующее видео сейчас"),
     BotCommand("youtube", "Загрузить один приватный YouTube Short"),
@@ -35,10 +39,11 @@ BOT_COMMANDS = [
 
 
 async def post_init(application):
-    await application.bot.set_my_commands(BOT_COMMANDS)
-    await application.bot.set_chat_menu_button(
-        menu_button=MenuButtonCommands()
-    )
+    try:
+        await application.bot.set_my_commands(BOT_COMMANDS)
+        await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    except TelegramError as error:
+        LOGGER.warning("Telegram menu setup failed: %s", error)
 
 
 def _owner_id(context):
@@ -88,18 +93,14 @@ def _instagram_url(line):
     except ValueError:
         return None
 
-    if (
-        parsed.scheme not in {"http", "https"}
-        or parsed.netloc.lower() not in {"instagram.com", "www.instagram.com"}
-    ):
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in {
+        "instagram.com",
+        "www.instagram.com",
+    }:
         return None
 
     parts = [part for part in parsed.path.split("/") if part]
-    if (
-        len(parts) != 2
-        or parts[0] not in PATH_KINDS
-        or not SHORTCODE.fullmatch(parts[1])
-    ):
+    if len(parts) != 2 or parts[0] not in PATH_KINDS or not SHORTCODE.fullmatch(parts[1]):
         return None
 
     kind, shortcode = parts
@@ -128,8 +129,7 @@ async def start(update, context):
 
     db.set_setting("telegram_owner_id", user.id)
     await update.effective_message.reply_text(
-        f"Подключено. Telegram ID: {user.id}\n"
-        "Откройте Menu или отправьте /help."
+        f"Подключено. Telegram ID: {user.id}\nОткройте Menu или отправьте /help."
     )
 
 
@@ -151,9 +151,7 @@ async def add_link(update, context):
         attached = await _attach_pending_caption(context, text)
         if attached:
             job_id, tags = attached
-            await update.effective_message.reply_text(
-                _caption_updated_message(job_id, tags)
-            )
+            await update.effective_message.reply_text(_caption_updated_message(job_id, tags))
             return
         await update.effective_message.reply_text(
             "Первая строка должна быть одной ссылкой Instagram."
@@ -170,11 +168,7 @@ async def add_link(update, context):
         if caption and db.set_caption(existing["id"], caption):
             db.delete_setting("pending_caption_job_id")
             tags = ""
-            video_path = (
-                Path(existing["video_path"])
-                if existing.get("video_path")
-                else None
-            )
+            video_path = Path(existing["video_path"]) if existing.get("video_path") else None
             if video_path and video_path.is_file():
                 try:
                     tagger = context.application.bot_data["tagger"]
@@ -218,16 +212,12 @@ async def add_link(update, context):
         path = await downloader.download(job_id, source_url)
         tags = await tagger.generate(path, caption)
         db.set_downloaded(job_id, path, tags)
-        await update.effective_message.reply_text(
-            _queued_message(job_id, tags)
-        )
+        await update.effective_message.reply_text(_queued_message(job_id, tags))
     except Exception:
         db.delete_job(job_id)
         settings = context.application.bot_data["settings"]
         shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
-        await update.effective_message.reply_text(
-            _skipped_message(job_id, source_url)
-        )
+        await update.effective_message.reply_text(_skipped_message(job_id, source_url))
 
 
 async def queue(update, context):
@@ -263,9 +253,7 @@ async def send_file(update, context):
 
     job = _job_from_args(context)
     if not job:
-        await update.effective_message.reply_text(
-            "Использование: /file 33 или /file SHORTCODE"
-        )
+        await update.effective_message.reply_text("Использование: /file 33 или /file SHORTCODE")
         return
 
     path = Path(job["video_path"]) if job and job["video_path"] else None
@@ -290,9 +278,7 @@ async def drop(update, context):
 
     job = _job_from_args(context)
     if not job:
-        await update.effective_message.reply_text(
-            "Использование: /drop 33 или /drop SHORTCODE"
-        )
+        await update.effective_message.reply_text("Использование: /drop 33 или /drop SHORTCODE")
         return
 
     db = context.application.bot_data["db"]
@@ -313,9 +299,7 @@ async def retry(update, context):
 
     job = _job_from_args(context)
     if not job:
-        await update.effective_message.reply_text(
-            "Использование: /retry 33 или /retry SHORTCODE"
-        )
+        await update.effective_message.reply_text("Использование: /retry 33 или /retry SHORTCODE")
         return
 
     db = context.application.bot_data["db"]
@@ -336,16 +320,24 @@ async def retry(update, context):
         path = await downloader.download(job_id, job["source_url"])
         tags = await tagger.generate(path, job.get("caption") or "")
         db.set_downloaded(job_id, path, tags)
-        await update.effective_message.reply_text(
-            _queued_message(job_id, tags)
-        )
+        await update.effective_message.reply_text(_queued_message(job_id, tags))
     except Exception:
-        db.delete_job(job_id)
         settings = context.application.bot_data["settings"]
         shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
-        await update.effective_message.reply_text(
-            _skipped_message(job_id, job["source_url"])
+        checkpoints = any(
+            job.get(column)
+            for column in (
+                "instagram_media_id",
+                "facebook_media_id",
+                "threads_media_id",
+                "youtube_video_id",
+            )
         )
+        if checkpoints:
+            db.set_failed(job_id, "Source download failed; checkpoints preserved")
+        else:
+            db.delete_job(job_id)
+        await update.effective_message.reply_text(_skipped_message(job_id, job["source_url"]))
 
 
 async def pause(update, context):
@@ -359,7 +351,10 @@ async def resume(update, context):
     if not _authorized(update, context):
         return
     context.application.bot_data["db"].set_paused(False)
-    await update.effective_message.reply_text("Публикация возобновлена.")
+    next_run = next_scheduled_at(context.application)
+    await update.effective_message.reply_text(
+        f"Публикация возобновлена.\nСледующий слот: {next_run:%d.%m %H:%M}."
+    )
 
 
 async def publish_now(update, context):
@@ -369,7 +364,34 @@ async def publish_now(update, context):
         await update.effective_message.reply_text("Очередь пуста.")
         return
     await update.effective_message.reply_text("Публикую следующее видео…")
-    await publish_next(context)
+    report = await publish_next(context)
+    if report.outcome == "skipped":
+        await update.effective_message.reply_text(report.message)
+
+
+async def status_command(update, context):
+    if not _authorized(update, context):
+        return
+
+    db = context.application.bot_data["db"]
+    publishers = context.application.bot_data["publishers"]
+    next_run = next_scheduled_at(context.application)
+    state = "пауза" if db.is_paused() else "активен"
+    platforms = ", ".join(platform.value for platform in publishers)
+    last_attempt = db.latest_publish_attempt()
+    last_line = "нет запусков"
+    if last_attempt:
+        last_line = f"{last_attempt['created_at']} · {last_attempt['outcome']}"
+        if last_attempt.get("job_id"):
+            last_line += f" · #{last_attempt['job_id']}"
+
+    await update.effective_message.reply_text(
+        f"Reelay: {state}\n"
+        f"В очереди: {db.count_jobs('queued')}\n"
+        f"Платформы: {platforms}\n"
+        f"Следующий слот: {next_run:%d.%m %H:%M}\n"
+        f"Последний запуск: {last_line}"
+    )
 
 
 async def youtube_test(update, context):
@@ -383,11 +405,10 @@ async def youtube_test(update, context):
         )
         return
 
-    if job.get("youtube_video_id"):
-        video_id = job["youtube_video_id"]
+    if job.get("youtube_video_id") or job.get("youtube_test_video_id"):
+        video_id = job.get("youtube_video_id") or job["youtube_test_video_id"]
         await update.effective_message.reply_text(
-            f"Уже загружено в YouTube: {video_id}\n"
-            f"https://youtu.be/{video_id}"
+            f"Уже загружено в YouTube: {video_id}\nhttps://youtu.be/{video_id}"
         )
         return
 
@@ -407,29 +428,26 @@ async def youtube_test(update, context):
         if not value
     ]
     if missing:
-        await update.effective_message.reply_text(
-            "YouTube OAuth не готов: " + ", ".join(missing)
-        )
+        await update.effective_message.reply_text("YouTube OAuth не готов: " + ", ".join(missing))
         return
 
-    await update.effective_message.reply_text(
-        f"Загружаю #{job['id']} в YouTube как private…"
-    )
+    await update.effective_message.reply_text(f"Загружаю #{job['id']} в YouTube как private…")
     publisher = YouTubePublisher(settings)
     publisher.privacy_status = "private"
     try:
         tagger = context.application.bot_data["tagger"]
-        title = await tagger.generate_title(
-            video_path, job.get("caption") or ""
+        title = await tagger.generate_title(video_path, job.get("caption") or "")
+        result = await publisher.publish(
+            PublishRequest(
+                video_path=video_path,
+                caption=compose_caption(job),
+                title=title,
+            )
         )
-        video_id = await publisher.publish(
-            video_path,
-            _publish_caption(job),
-            title,
-        )
+        video_id = result.media_id
         db = context.application.bot_data["db"]
-        if not db.set_platform_media_id(job["id"], "youtube", video_id):
-            raise RuntimeError("YouTube ID не сохранился в очереди")
+        if not db.set_youtube_test_video_id(job["id"], video_id):
+            raise RuntimeError("YouTube test ID не сохранился в очереди")
     except Exception as error:
         await update.effective_message.reply_text(
             f"YouTube не загрузил #{job['id']}: {_short_error(error)}\n"
@@ -451,9 +469,7 @@ async def posts(update, context):
     application = context.application
     if not context.args:
         times = current_schedule(application)
-        await update.effective_message.reply_text(
-            _posts_message(len(times), times)
-        )
+        await update.effective_message.reply_text(_posts_message(len(times), times))
         return
 
     if (
@@ -461,9 +477,7 @@ async def posts(update, context):
         or not context.args[0].isdigit()
         or not 1 <= int(context.args[0]) <= 12
     ):
-        await update.effective_message.reply_text(
-            "Использование: /posts N, где N от 1 до 12."
-        )
+        await update.effective_message.reply_text("Использование: /posts N, где N от 1 до 12.")
         return
 
     count = int(context.args[0])
@@ -516,12 +530,9 @@ def _destination_ids(job):
         ("FB", "facebook_media_id"),
         ("TH", "threads_media_id"),
         ("YT", "youtube_video_id"),
+        ("YT-test", "youtube_test_video_id"),
     )
-    return " · ".join(
-        f"{label}:{job[column]}"
-        for label, column in fields
-        if job.get(column)
-    )
+    return " · ".join(f"{label}:{job[column]}" for label, column in fields if job.get(column))
 
 
 def _queued_message(job_id, tags):
@@ -556,6 +567,7 @@ def _help_message(times):
         "/start — подключить или проверить бота\n"
         "/help — показать эту инструкцию\n"
         "/queue — показать последние задания\n"
+        "/status — состояние процесса, очереди и следующий слот\n"
         "/posts [N] — показать расписание или задать 1–12 постов в день\n"
         "/now — опубликовать следующее видео сейчас\n"
         "/youtube ID|SHORTCODE — приватно протестировать YouTube Short\n"
@@ -572,6 +584,7 @@ def register_handlers(application):
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("queue", queue))
+    application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("file", send_file))
     application.add_handler(CommandHandler("drop", drop))
     application.add_handler(CommandHandler("retry", retry))
@@ -580,6 +593,4 @@ def register_handlers(application):
     application.add_handler(CommandHandler("now", publish_now))
     application.add_handler(CommandHandler("youtube", youtube_test))
     application.add_handler(CommandHandler("posts", posts))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, add_link)
-    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))

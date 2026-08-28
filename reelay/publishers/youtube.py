@@ -1,25 +1,26 @@
 import asyncio
 import re
 import subprocess
-from pathlib import Path
 
 import httpx
 
+from .contract import Platform, PublishRequest, PublishResult
+
 
 class YouTubePublisher:
+    platform = Platform.YOUTUBE
+
     def __init__(self, settings):
         self.client_id = settings.youtube_client_id
         self.client_secret = settings.youtube_client_secret
         self.refresh_token = settings.youtube_refresh_token
         self.privacy_status = settings.youtube_privacy_status
 
-    async def publish(self, video_path, caption="", source_title=""):
-        video_path = Path(video_path)
+    async def publish(self, request: PublishRequest) -> PublishResult:
+        video_path = request.video_path
         duration = await asyncio.to_thread(self._duration, video_path)
         if duration > 180.0:
-            raise RuntimeError(
-                f"YouTube Short длиннее 3 минут: {duration:.1f} сек"
-            )
+            raise RuntimeError(f"YouTube Short длиннее 3 минут: {duration:.1f} сек")
         file_size = video_path.stat().st_size
         timeout = httpx.Timeout(300.0, connect=30.0)
 
@@ -27,8 +28,8 @@ class YouTubePublisher:
             access_token = await self._access_token(client)
             metadata = {
                 "snippet": {
-                    "title": self._title(source_title, caption),
-                    "description": (caption or "")[:5000],
+                    "title": self._title(request.title, request.caption),
+                    "description": request.caption[:5000],
                     "categoryId": "22",
                 },
                 "status": {
@@ -69,9 +70,7 @@ class YouTubePublisher:
                         "Authorization": f"Bearer {access_token}",
                         "Content-Type": "video/mp4",
                         "Content-Length": str(file_size - offset),
-                        "Content-Range": (
-                            f"bytes {offset}-{file_size - 1}/{file_size}"
-                        ),
+                        "Content-Range": (f"bytes {offset}-{file_size - 1}/{file_size}"),
                     },
                     content=self._read_file(video_path, offset),
                 )
@@ -82,7 +81,11 @@ class YouTubePublisher:
                         raise RuntimeError("YouTube returned invalid JSON") from error
                     if not video_id:
                         raise RuntimeError("YouTube did not return a video id")
-                    return str(video_id)
+                    return PublishResult(
+                        platform=self.platform,
+                        media_id=video_id,
+                        permalink=f"https://youtu.be/{video_id}",
+                    )
                 if uploaded.status_code != 308:
                     raise RuntimeError(self._response_error(uploaded))
                 received = uploaded.headers.get("range", "")
@@ -102,23 +105,19 @@ class YouTubePublisher:
                         try:
                             video_id = uploaded.json().get("id")
                         except ValueError as error:
-                            raise RuntimeError(
-                                "YouTube returned invalid JSON"
-                            ) from error
+                            raise RuntimeError("YouTube returned invalid JSON") from error
                         if not video_id:
-                            raise RuntimeError(
-                                "YouTube did not return a video id"
-                            )
-                        return str(video_id)
+                            raise RuntimeError("YouTube did not return a video id")
+                        return PublishResult(
+                            platform=self.platform,
+                            media_id=video_id,
+                            permalink=f"https://youtu.be/{video_id}",
+                        )
                     if uploaded.status_code != 308:
                         raise RuntimeError(self._response_error(uploaded))
                     received = uploaded.headers.get("range", "")
                 try:
-                    next_offset = (
-                        int(received.rsplit("-", 1)[1]) + 1
-                        if received
-                        else 0
-                    )
+                    next_offset = int(received.rsplit("-", 1)[1]) + 1 if received else 0
                 except (IndexError, ValueError) as error:
                     raise RuntimeError(
                         "YouTube resumable upload returned invalid byte range"
@@ -126,9 +125,7 @@ class YouTubePublisher:
                 if next_offset <= offset:
                     stalled += 1
                     if stalled > 2:
-                        raise RuntimeError(
-                            "YouTube resumable upload made no progress"
-                        )
+                        raise RuntimeError("YouTube resumable upload made no progress")
                 else:
                     stalled = 0
                 offset = next_offset

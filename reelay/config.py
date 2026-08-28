@@ -3,7 +3,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
@@ -29,9 +28,9 @@ class Settings:
         self.telegram_token = _required("TELEGRAM_BOT_TOKEN")
         owner_id = os.getenv("TELEGRAM_OWNER_ID", "").strip()
         self.telegram_owner_id = int(owner_id) if owner_id else None
-        self.telegram_owner_username = os.getenv(
-            "TELEGRAM_OWNER_USERNAME", "pol4xer"
-        ).strip().lstrip("@").lower()
+        self.telegram_owner_username = (
+            os.getenv("TELEGRAM_OWNER_USERNAME", "pol4xer").strip().lstrip("@").lower()
+        )
 
         self.meta_api_version = os.getenv("META_API_VERSION", "v26.0").strip()
         self.meta_ig_user_id = _required("META_IG_USER_ID")
@@ -43,31 +42,17 @@ class Settings:
         self.publish_threads = _bool("PUBLISH_THREADS")
         self.publish_youtube = _bool("PUBLISH_YOUTUBE")
 
-        self.threads_api_version = os.getenv(
-            "THREADS_API_VERSION", "v1.0"
-        ).strip()
+        self.threads_api_version = os.getenv("THREADS_API_VERSION", "v1.0").strip()
         self.threads_app_id = os.getenv("THREADS_APP_ID", "").strip()
-        self.threads_app_secret = os.getenv(
-            "THREADS_APP_SECRET", ""
-        ).strip()
+        self.threads_app_secret = os.getenv("THREADS_APP_SECRET", "").strip()
         self.threads_user_id = os.getenv("THREADS_USER_ID", "").strip()
-        self.threads_access_token = os.getenv(
-            "THREADS_ACCESS_TOKEN", ""
-        ).strip()
+        self.threads_access_token = os.getenv("THREADS_ACCESS_TOKEN", "").strip()
 
         self.youtube_client_id = os.getenv("YOUTUBE_CLIENT_ID", "").strip()
-        self.youtube_client_secret = os.getenv(
-            "YOUTUBE_CLIENT_SECRET", ""
-        ).strip()
-        self.youtube_refresh_token = os.getenv(
-            "YOUTUBE_REFRESH_TOKEN", ""
-        ).strip()
-        self.youtube_channel_id = os.getenv(
-            "YOUTUBE_CHANNEL_ID", ""
-        ).strip()
-        self.youtube_privacy_status = os.getenv(
-            "YOUTUBE_PRIVACY_STATUS", "private"
-        ).strip()
+        self.youtube_client_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "").strip()
+        self.youtube_refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
+        self.youtube_channel_id = os.getenv("YOUTUBE_CHANNEL_ID", "").strip()
+        self.youtube_privacy_status = os.getenv("YOUTUBE_PRIVACY_STATUS", "private").strip()
 
         required_by_flag = {
             "PUBLISH_FACEBOOK": (
@@ -95,19 +80,14 @@ class Settings:
             if enabled:
                 missing = [name for name, value in values.items() if not value]
                 if missing:
-                    raise RuntimeError(
-                        f"{flag}=true requires {', '.join(missing)}"
-                    )
+                    raise RuntimeError(f"{flag}=true requires {', '.join(missing)}")
 
         self.chrome_profile = os.getenv("CHROME_PROFILE", "Default").strip()
         self.timezone = os.getenv("TIMEZONE", "Europe/Istanbul").strip()
         self.posts_per_day = int(os.getenv("POSTS_PER_DAY", "5"))
-        self.post_window_start = os.getenv(
-            "POST_WINDOW_START", "09:00"
-        ).strip()
-        self.post_window_end = os.getenv(
-            "POST_WINDOW_END", "21:00"
-        ).strip()
+        self.post_window_start = os.getenv("POST_WINDOW_START", "09:00").strip()
+        self.post_window_end = os.getenv("POST_WINDOW_END", "21:00").strip()
+        self.schedule_grace_minutes = int(os.getenv("SCHEDULE_GRACE_MINUTES", "30"))
         self.post_on_weekends = _bool("POST_ON_WEEKENDS", "true")
         self.send_mp4_automatically = _bool("SEND_MP4_AUTOMATICALLY")
         self.allow_private_sources = _bool("ALLOW_PRIVATE_SOURCES")

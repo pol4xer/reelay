@@ -14,7 +14,6 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import httpx
 from dotenv import load_dotenv
 
-
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 SCOPES = {
@@ -49,7 +48,7 @@ class CallbackHandler(BaseHTTPRequestHandler):
             "<title>Reelay YouTube OAuth</title>"
             "<h2>Авторизация получена</h2>"
             "<p>Эту вкладку можно закрыть и вернуться в терминал.</p>"
-        ).encode("utf-8")
+        ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -127,9 +126,7 @@ def _exchange_code(client, client_id, client_secret, code, verifier, redirect_ur
         )
     missing_scopes = SCOPES - granted_scopes
     if missing_scopes:
-        raise RuntimeError(
-            "Google не выдал scopes: " + ", ".join(sorted(missing_scopes))
-        )
+        raise RuntimeError("Google не выдал scopes: " + ", ".join(sorted(missing_scopes)))
     return access_token, refresh_token
 
 
@@ -144,9 +141,7 @@ def _authorized_channel(client, access_token):
     if not channels:
         raise RuntimeError("У выбранного Google-аккаунта нет YouTube-канала")
     if len(channels) != 1:
-        found = ", ".join(
-            str(channel.get("id") or "unknown") for channel in channels
-        )
+        found = ", ".join(str(channel.get("id") or "unknown") for channel in channels)
         raise RuntimeError(
             "OAuth вернул несколько каналов: "
             f"{found}. Сделайте нужный канал каналом по умолчанию и повторите."
@@ -225,18 +220,22 @@ def main():
     server.oauth_result = None
     port = server.server_address[1]
     redirect_uri = f"http://127.0.0.1:{port}{CALLBACK_PATH}"
-    authorization_url = AUTH_URL + "?" + urlencode(
-        {
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": " ".join(sorted(SCOPES)),
-            "access_type": "offline",
-            "prompt": "consent select_account",
-            "state": state,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-        }
+    authorization_url = (
+        AUTH_URL
+        + "?"
+        + urlencode(
+            {
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "scope": " ".join(sorted(SCOPES)),
+                "access_type": "offline",
+                "prompt": "consent select_account",
+                "state": state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            }
+        )
     )
 
     print("Открываю Google OAuth в системном браузере…")
@@ -268,9 +267,7 @@ def main():
     print(f"YouTube channel ID: {channel_id}")
     expected = str(args.expected_channel_id or "").strip()
     if expected and not hmac.compare_digest(expected, channel_id):
-        raise RuntimeError(
-            f"Ожидался канал {expected}, но выбран {channel_id}; .env не изменён"
-        )
+        raise RuntimeError(f"Ожидался канал {expected}, но выбран {channel_id}; .env не изменён")
     if not expected:
         confirmation = input("Сохранить OAuth для этого канала? [y/N]: ").strip()
         if confirmation.casefold() not in {"y", "yes", "д", "да"}:

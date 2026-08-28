@@ -1,65 +1,32 @@
 import logging
+import sys
 
 from telegram import Update
-from telegram.ext import Application
 
-from .bot import post_init, register_handlers
+from .app import build_application
 from .config import Settings
-from .db import QueueDB
-from .downloader import InstagramDownloader
-from .facebook import FacebookPublisher
-from .instagram import InstagramPublisher
-from .scheduler import register_schedule
-from .tagger import AutoTagger
-from .threads import ThreadsPublisher
-from .youtube import YouTubePublisher
+from .runtime import single_process
 
 
 def main():
     logging.basicConfig(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         level=logging.INFO,
+        stream=sys.stdout,
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     settings = Settings()
-    db = QueueDB(settings.db_path)
-    db.init()
+    try:
+        with single_process(settings.data_dir / "reelay.lock"):
+            application, post_times = build_application(settings)
 
-    destinations = {}
-    if settings.publish_facebook:
-        destinations["facebook"] = FacebookPublisher(settings)
-    if settings.publish_threads:
-        destinations["threads"] = ThreadsPublisher(settings)
-    if settings.publish_youtube:
-        destinations["youtube"] = YouTubePublisher(settings)
-
-    application = (
-        Application.builder()
-        .token(settings.telegram_token)
-        .post_init(post_init)
-        .build()
-    )
-    application.bot_data.update(
-        {
-            "settings": settings,
-            "db": db,
-            "downloader": InstagramDownloader(settings),
-            "publisher": InstagramPublisher(settings),
-            "destinations": destinations,
-            "tagger": AutoTagger(settings),
-        }
-    )
-
-    register_handlers(application)
-    post_times = register_schedule(application)
-
-    print(
-        "Reelay started: "
-        + ", ".join(post_times)
-        + f" ({settings.timezone})"
-    )
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+            print("Reelay started: " + ", ".join(post_times) + f" ({settings.timezone})")
+            application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except RuntimeError as error:
+        if str(error) != "Another Reelay process is already running":
+            raise
+        raise SystemExit(f"Reelay not started: {error}") from None
 
 
 if __name__ == "__main__":
