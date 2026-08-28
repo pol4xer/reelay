@@ -4,12 +4,13 @@ SHELL := /bin/bash
 UV ?= uv
 APP_MODULE := reelay
 
-.PHONY: help install run format check queue-audit service-install service-start service-stop service-status service-uninstall
+.PHONY: help install run config-ui format check queue-audit service-install service-start service-stop service-status service-uninstall
 
 help:
 	@echo "Reelay commands:"
 	@echo "  make install          Install runtime and Ruff dependencies"
 	@echo "  make run              Run Reelay in the foreground"
+	@echo "  make config-ui        Open the local settings panel"
 	@echo "  make format           Fix Ruff lint issues and format Python code"
 	@echo "  make check            Check Ruff lint and formatting"
 	@echo "  make queue-audit      Validate queue state and every pending MP4"
@@ -25,6 +26,9 @@ install:
 run:
 	$(UV) run --no-sync python -m $(APP_MODULE)
 
+config-ui:
+	$(UV) run --no-sync python -m reelay.config_ui
+
 format:
 	$(UV) run --no-sync ruff check --fix $(APP_MODULE)
 	$(UV) run --no-sync ruff format $(APP_MODULE)
@@ -34,7 +38,8 @@ check:
 	$(UV) run --no-sync ruff check $(APP_MODULE)
 	$(UV) run --no-sync ruff format --check $(APP_MODULE)
 	PYTHONPYCACHEPREFIX=/tmp/reelay-check-pyc $(UV) run --no-sync python -m compileall -q $(APP_MODULE)
-	bash -n scripts/service.sh
+	@if command -v node >/dev/null 2>&1; then node --check reelay/config_ui_static/app.js; fi
+	bash -n scripts/service.sh "Reelay Settings.command"
 	plutil -lint deploy/macos/com.pol4xer.reelay.plist.template
 
 queue-audit:

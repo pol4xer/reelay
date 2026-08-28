@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="reelay-token" content="">
+  <title>Reelay Settings</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Разделы настроек">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">R</div>
+        <div>
+          <strong>Reelay</strong>
+          <span>Control Center</span>
+        </div>
+      </div>
+
+      <div class="service-pill" id="service-pill">
+        <span class="status-dot"></span>
+        <span id="service-pill-text">Проверяем сервис…</span>
+      </div>
+
+      <nav class="nav-list" id="navigation">
+        <button class="nav-item is-active" data-section="overview" aria-label="Обзор">
+          <span class="nav-icon">⌂</span><span>Обзор</span>
+        </button>
+        <p class="nav-caption">Подключения</p>
+        <button class="nav-item" data-section="telegram" aria-label="Telegram">
+          <span class="nav-icon">➤</span><span>Telegram</span><span class="nav-state"></span>
+        </button>
+        <button class="nav-item" data-section="instagram_meta" aria-label="Instagram и Meta">
+          <span class="nav-icon">◎</span><span>Instagram & Meta</span><span class="nav-state"></span>
+        </button>
+        <button class="nav-item" data-section="facebook" aria-label="Facebook Page">
+          <span class="nav-icon">f</span><span>Facebook Page</span><span class="nav-state"></span>
+        </button>
+        <button class="nav-item" data-section="threads" aria-label="Threads">
+          <span class="nav-icon">@</span><span>Threads</span><span class="nav-state"></span>
+        </button>
+        <button class="nav-item" data-section="youtube" aria-label="YouTube">
+          <span class="nav-icon">▶</span><span>YouTube</span><span class="nav-state"></span>
+        </button>
+        <p class="nav-caption">Автоматизация</p>
+        <button class="nav-item" data-section="schedule_storage" aria-label="Расписание">
+          <span class="nav-icon">◷</span><span>Расписание</span><span class="nav-state"></span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span>Локальная панель</span>
+        <small>127.0.0.1 · секреты не покидают Mac</small>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow" id="page-eyebrow">REELAY SETTINGS</p>
+          <h1 id="page-title">Обзор</h1>
+          <p id="page-description">Состояние сервиса, очереди и всех подключённых платформ.</p>
+        </div>
+        <div class="header-actions">
+          <button class="button button-ghost" id="refresh-button" type="button">Обновить</button>
+          <button class="button button-primary desktop-save" id="header-save-button" type="button" disabled>
+            Сохранить
+          </button>
+        </div>
+      </header>
+
+      <section id="overview-panel" class="panel overview-panel">
+        <div class="hero-card">
+          <div>
+            <span class="hero-kicker">AUTOMATION STATUS</span>
+            <h2 id="hero-title">Загружаем состояние…</h2>
+            <p id="hero-copy">Проверяем LaunchAgent и локальную очередь.</p>
+          </div>
+          <div class="hero-orbit" aria-hidden="true">
+            <div class="orbit-core">R</div>
+            <span class="orbit-dot dot-one"></span>
+            <span class="orbit-dot dot-two"></span>
+            <span class="orbit-dot dot-three"></span>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <article class="metric-card">
+            <span class="metric-label">Сервис</span>
+            <strong id="metric-service">—</strong>
+            <small id="metric-service-detail">LaunchAgent</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">В очереди</span>
+            <strong id="metric-queued">—</strong>
+            <small id="metric-queue-detail">видео ожидают</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Опубликовано</span>
+            <strong id="metric-published">—</strong>
+            <small>завершённых заданий</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Конфигурация</span>
+            <strong id="metric-config">—</strong>
+            <small id="metric-config-detail">проверка полей</small>
+          </article>
+        </div>
+
+        <div class="overview-columns">
+          <article class="content-card">
+            <div class="card-heading">
+              <div>
+                <span class="card-kicker">PLATFORMS</span>
+                <h3>Куда публикуем</h3>
+              </div>
+            </div>
+            <div class="platform-list" id="platform-list"></div>
+          </article>
+
+          <article class="content-card guide-card">
+            <div class="card-heading">
+              <div>
+                <span class="card-kicker">QUICK START</span>
+                <h3>Как настроить</h3>
+              </div>
+            </div>
+            <ol class="steps-list">
+              <li><span>1</span><div><strong>Заполните доступы</strong><p>Каждая платформа находится в отдельной вкладке.</p></div></li>
+              <li><span>2</span><div><strong>Проверьте расписание</strong><p>Количество слотов и время применятся после restart.</p></div></li>
+              <li><span>3</span><div><strong>Сохраните и перезапустите</strong><p>Reelay подхватит новые переменные автоматически.</p></div></li>
+            </ol>
+          </article>
+        </div>
+      </section>
+
+      <section id="settings-panel" class="panel settings-panel" hidden>
+        <div class="section-banner" id="section-banner">
+          <div class="section-banner-icon" id="section-icon">●</div>
+          <div>
+            <span id="section-badge">PLATFORM</span>
+            <h2 id="section-title">Настройки</h2>
+            <p id="section-help">Заполните необходимые значения.</p>
+          </div>
+          <a id="section-link" class="docs-link" href="#" target="_blank" rel="noreferrer" hidden>
+            Открыть документацию ↗
+          </a>
+        </div>
+
+        <form id="settings-form" novalidate>
+          <div class="fields-grid" id="fields-grid"></div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <div class="save-bar" id="save-bar" aria-live="polite">
+    <div class="save-state">
+      <span class="save-dot"></span>
+      <div><strong id="save-title">Нет изменений</strong><small id="save-copy">Все настройки сохранены</small></div>
+    </div>
+    <div class="save-actions">
+      <button class="button button-ghost" id="discard-button" type="button" disabled>Отменить</button>
+      <button class="button button-secondary" id="save-button" type="button" disabled>Сохранить</button>
+      <button class="button button-primary" id="save-restart-button" type="button" disabled>Сохранить и перезапустить</button>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toast-stack" aria-live="assertive"></div>
+  <div class="loading-screen" id="loading-screen">
+    <div class="loading-logo">R</div>
+    <strong>Открываем Reelay Settings</strong>
+    <span>Читаем локальную конфигурацию…</span>
+  </div>
+</body>
+</html>
