@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from telegram import BotCommand, MenuButtonCommands
 from telegram.ext import CommandHandler, MessageHandler, filters
 
 from .scheduler import current_schedule, publish_next, reschedule_posts
@@ -12,6 +13,25 @@ from .scheduler import current_schedule, publish_next, reschedule_posts
 SHORTCODE = re.compile(r"^[A-Za-z0-9_-]+$")
 PATH_KINDS = {"p", "reel", "reels", "tv"}
 MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024
+BOT_COMMANDS = [
+    BotCommand("start", "Подключить или проверить бота"),
+    BotCommand("help", "Показать инструкцию и команды"),
+    BotCommand("queue", "Показать очередь"),
+    BotCommand("posts", "Показать или изменить постов в день"),
+    BotCommand("now", "Опубликовать следующее видео сейчас"),
+    BotCommand("file", "Скачать MP4: /file ID"),
+    BotCommand("drop", "Удалить задание: /drop ID"),
+    BotCommand("retry", "Повторить failed: /retry ID"),
+    BotCommand("pause", "Приостановить публикации"),
+    BotCommand("resume", "Возобновить публикации"),
+]
+
+
+async def post_init(application):
+    await application.bot.set_my_commands(BOT_COMMANDS)
+    await application.bot.set_chat_menu_button(
+        menu_button=MenuButtonCommands()
+    )
 
 
 def _owner_id(context):
@@ -80,7 +100,9 @@ async def start(update, context):
 
     if owner_id is not None:
         if user.id == owner_id:
-            await update.effective_message.reply_text("Reelay готов.")
+            await update.effective_message.reply_text(
+                "Reelay готов. Откройте Menu или отправьте /help."
+            )
         return
 
     settings = context.application.bot_data["settings"]
@@ -90,8 +112,16 @@ async def start(update, context):
 
     db.set_setting("telegram_owner_id", user.id)
     await update.effective_message.reply_text(
-        f"Подключено. Telegram ID: {user.id}"
+        f"Подключено. Telegram ID: {user.id}\n"
+        "Откройте Menu или отправьте /help."
     )
+
+
+async def help_command(update, context):
+    if not _authorized(update, context):
+        return
+    times = current_schedule(context.application)
+    await update.effective_message.reply_text(_help_message(times))
 
 
 async def add_link(update, context):
@@ -402,8 +432,30 @@ def _posts_message(count, times):
     return f"Постов в день: {count}\nВремена: {', '.join(times)}"
 
 
+def _help_message(times):
+    return (
+        "Reelay — очередь для Instagram Reels.\n\n"
+        "Как добавить видео:\n"
+        "Отправьте ссылку Instagram первой строкой. Caption можно "
+        "добавить со второй строки или следующим сообщением.\n\n"
+        "Команды:\n"
+        "/start — подключить или проверить бота\n"
+        "/help — показать эту инструкцию\n"
+        "/queue — показать последние задания\n"
+        "/posts [N] — показать расписание или задать 1–12 постов в день\n"
+        "/now — опубликовать следующее видео сейчас\n"
+        "/file ID — отправить MP4 в Telegram\n"
+        "/drop ID — удалить задание и локальный файл\n"
+        "/retry ID — повторить задание со статусом failed\n"
+        "/pause — приостановить публикации\n"
+        "/resume — возобновить публикации\n\n"
+        f"Текущее расписание: {len(times)} в день — {', '.join(times)}"
+    )
+
+
 def register_handlers(application):
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("queue", queue))
     application.add_handler(CommandHandler("file", send_file))
     application.add_handler(CommandHandler("drop", drop))

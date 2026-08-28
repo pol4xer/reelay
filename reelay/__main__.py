@@ -3,7 +3,7 @@ import logging
 from telegram import Update
 from telegram.ext import Application
 
-from .bot import register_handlers
+from .bot import post_init, register_handlers
 from .config import Settings
 from .db import QueueDB
 from .downloader import InstagramDownloader
@@ -23,7 +23,12 @@ def main():
     db = QueueDB(settings.db_path)
     db.init()
 
-    application = Application.builder().token(settings.telegram_token).build()
+    application = (
+        Application.builder()
+        .token(settings.telegram_token)
+        .post_init(post_init)
+        .build()
+    )
     application.bot_data.update(
         {
             "settings": settings,
