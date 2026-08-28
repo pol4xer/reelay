@@ -4,7 +4,7 @@ SHELL := /bin/bash
 UV ?= uv
 APP_MODULE := reelay
 
-.PHONY: help install run config-ui format check queue-audit service-install service-start service-stop service-status service-uninstall
+.PHONY: help install run config-ui format check queue-audit server-bundle service-install service-start service-stop service-status service-uninstall
 
 help:
 	@echo "Reelay commands:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make format           Fix Ruff lint issues and format Python code"
 	@echo "  make check            Check Ruff lint and formatting"
 	@echo "  make queue-audit      Validate queue state and every pending MP4"
+	@echo "  make server-bundle    Build one credential+queue Docker deploy ZIP"
 	@echo "  make service-install  Install and start the macOS LaunchAgent"
 	@echo "  make service-start    Start or restart the macOS LaunchAgent"
 	@echo "  make service-stop     Stop the macOS LaunchAgent"
@@ -40,11 +41,14 @@ check:
 	PYTHONPYCACHEPREFIX=/tmp/reelay-check-pyc $(UV) run --no-sync python -m compileall -q $(APP_MODULE)
 	@if command -v node >/dev/null 2>&1; then node --check reelay/config_ui_static/app.js; fi
 	@if command -v docker >/dev/null 2>&1; then env REELAY_ENV_FILE=/dev/null docker compose config --quiet; fi
-	bash -n scripts/service.sh scripts/server-preflight.sh "Reelay Settings.command"
+	bash -n scripts/service.sh scripts/server-preflight.sh scripts/build-server-bundle.sh deploy/docker/install.sh "Reelay Settings.command"
 	plutil -lint deploy/macos/com.pol4xer.reelay.plist.template
 
 queue-audit:
 	$(UV) run --no-sync python -m reelay.maintenance queue-audit --probe
+
+server-bundle:
+	bash scripts/build-server-bundle.sh "$(CURDIR)/Reelay-All-In-One.zip"
 
 service-install:
 	bash scripts/service.sh install

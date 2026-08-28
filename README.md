@@ -154,3 +154,20 @@ Compose монтирует `./data` в `/app/data`, автоматически �
 входящие порты. Nginx и TLS для основного бота не требуются: Telegram использует long polling,
 публикации идут исходящими HTTPS-запросами, а Threads получает одноразовый HTTPS Quick Tunnel.
 Подробности и перенос существующей очереди: [`deploy/docker/README.md`](deploy/docker/README.md).
+
+Один полный архив с кодом, `.env`, SQLite и всеми ожидающими MP4 создаётся командой:
+
+```bash
+make server-bundle
+```
+
+Перед созданием архива локальный Reelay нужно остановить (`make service-stop`). Сборщик
+дополнительно проверяет process lock и откажется делать потенциально расходящийся снимок.
+
+На Linux-сервере с установленными Docker Engine, Docker Compose v2 и `unzip` достаточно
+одной строки (подставьте SHA-256, который напечатает сборщик и который будет указан рядом
+с готовым архивом):
+
+```bash
+echo 'SHA256  Reelay-All-In-One.zip' | sha256sum --check && d="$(mktemp -d)" && trap 'rm -rf "$d"' EXIT && unzip -q Reelay-All-In-One.zip -d "$d" && sudo bash "$d/reelay-server/deploy/docker/install.sh"
+```
