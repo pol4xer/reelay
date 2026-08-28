@@ -123,3 +123,18 @@ Reelay держит process lock в `data/reelay.lock`, поэтому втор�
 
 LaunchAgent относится только к локальному macOS-запуску. Серверный деплой позднее сможет
 использовать тот же стабильный entrypoint `python -m reelay`, не меняя код приложения.
+
+## Проверка Linux-сервера
+
+Перед серверным деплоем передайте владельцу только `scripts/server-preflight.sh`. Скрипт ничего
+не устанавливает, не читает credentials и удаляет созданные временные файлы. Запуск:
+
+```bash
+chmod +x server-preflight.sh
+./server-preflight.sh | tee reelay-server-report.txt
+```
+
+Файл `reelay-server-report.txt` содержит ОС, архитектуру, доступные CPU/RAM/диск, SSH-контекст,
+systemd/Docker/tooling, проверку SQLite WAL и доступность всех необходимых DNS/HTTPS endpoint'ов.
+По умолчанию проверяется будущий runtime-путь `/opt/reelay/data`; другой абсолютный путь можно
+передать единственным аргументом скрипта.

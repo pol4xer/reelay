@@ -39,7 +39,7 @@ check:
 	$(UV) run --no-sync ruff format --check $(APP_MODULE)
 	PYTHONPYCACHEPREFIX=/tmp/reelay-check-pyc $(UV) run --no-sync python -m compileall -q $(APP_MODULE)
 	@if command -v node >/dev/null 2>&1; then node --check reelay/config_ui_static/app.js; fi
-	bash -n scripts/service.sh "Reelay Settings.command"
+	bash -n scripts/service.sh scripts/server-preflight.sh "Reelay Settings.command"
 	plutil -lint deploy/macos/com.pol4xer.reelay.plist.template
 
 queue-audit:
