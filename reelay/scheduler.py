@@ -168,6 +168,14 @@ async def publish_next(context):
                     media_id = await destination.publish(
                         job["instagram_media_id"], caption
                     )
+                elif platform == "youtube":
+                    tagger = context.application.bot_data["tagger"]
+                    title = await tagger.generate_title(
+                        job["video_path"], job.get("caption") or ""
+                    )
+                    media_id = await destination.publish(
+                        job["video_path"], caption, title
+                    )
                 else:
                     media_id = await destination.publish(
                         job["video_path"], caption

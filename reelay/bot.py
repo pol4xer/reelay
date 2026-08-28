@@ -418,9 +418,14 @@ async def youtube_test(update, context):
     publisher = YouTubePublisher(settings)
     publisher.privacy_status = "private"
     try:
+        tagger = context.application.bot_data["tagger"]
+        title = await tagger.generate_title(
+            video_path, job.get("caption") or ""
+        )
         video_id = await publisher.publish(
             video_path,
             _publish_caption(job),
+            title,
         )
         db = context.application.bot_data["db"]
         if not db.set_platform_media_id(job["id"], "youtube", video_id):
@@ -434,6 +439,7 @@ async def youtube_test(update, context):
 
     await update.effective_message.reply_text(
         f"YouTube private готов: #{job['id']} · {video_id}\n"
+        f"Title: {title}\n"
         f"https://youtu.be/{video_id}"
     )
 

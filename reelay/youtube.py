@@ -1,6 +1,6 @@
 import asyncio
+import re
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -202,10 +202,13 @@ class YouTubePublisher:
                 ),
                 "",
             )
+        title = re.sub(r"\s+", " ", title).strip()
         if not title:
-            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-            title = f"Reelay Short {stamp}"
-        return title[:100]
+            title = "A Moment Worth Watching"
+        if len(title) <= 100:
+            return title
+        shortened = title[:101].rsplit(" ", 1)[0].rstrip()
+        return shortened or title[:100]
 
     @staticmethod
     async def _read_file(video_path, offset):
