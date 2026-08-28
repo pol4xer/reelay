@@ -130,7 +130,10 @@ async def publish_next(context):
                 context,
                 settings,
                 db,
-                f"Ошибка публикации #{job['id']}: {exc}",
+                (
+                    f"Ошибка публикации #{job['id']}: {exc}\n"
+                    f"Источник: {job['source_url']}"
+                ),
             )
             return
 

@@ -209,7 +209,9 @@ async def add_link(update, context):
         db.delete_job(job_id)
         settings = context.application.bot_data["settings"]
         shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
-        await update.effective_message.reply_text(f"Пропущено: #{job_id}")
+        await update.effective_message.reply_text(
+            _skipped_message(job_id, source_url)
+        )
 
 
 async def queue(update, context):
@@ -228,8 +230,10 @@ async def queue(update, context):
         row = f"#{job['id']} · {job['status']} · {job['shortcode']}"
         if job.get("tags"):
             row += f"\n{_short_tags(job['tags'])}"
-        if job["status"] == "failed" and job["error"]:
-            row += f"\n{_short_error(job['error'], 160)}"
+        if job["status"] == "failed":
+            row += f"\nИсточник: {job['source_url']}"
+            if job["error"]:
+                row += f"\n{_short_error(job['error'], 160)}"
         rows.append(row)
     await update.effective_message.reply_text("\n".join(rows))
 
@@ -321,7 +325,9 @@ async def retry(update, context):
         db.delete_job(job_id)
         settings = context.application.bot_data["settings"]
         shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
-        await update.effective_message.reply_text(f"Пропущено: #{job_id}")
+        await update.effective_message.reply_text(
+            _skipped_message(job_id, job["source_url"])
+        )
 
 
 async def pause(update, context):
@@ -419,6 +425,10 @@ def _queued_message(job_id, tags):
     if tags:
         message += f"\n{tags}"
     return message
+
+
+def _skipped_message(job_id, source_url):
+    return f"Пропущено: #{job_id}\nИсточник: {source_url}"
 
 
 def _caption_updated_message(job_id, tags):
