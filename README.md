@@ -28,6 +28,8 @@ https://www.instagram.com/reel/SHORTCODE/
 
 При `ALLOW_PRIVATE_SOURCES=false` бот не читает cookies Chrome. Недоступные, закрытые и удалённые публикации удаляются из очереди с коротким сообщением `Пропущено: #ID`.
 
+Facebook Page, Threads и YouTube publishers уже подключены к общей очереди, но по умолчанию выключены. Каждый внешний media ID сохраняется сразу: если одна платформа упала, `/retry` продолжит с неё и не продублирует уже успешные публикации. Настройка credentials: [`docs/CROSSPOSTING_SETUP.md`](docs/CROSSPOSTING_SETUP.md).
+
 Команды: `/help`, `/queue`, `/file ID`, `/drop ID`, `/retry ID`, `/now`, `/posts N`, `/pause`, `/resume`.
 
 Локальный процесс должен работать в моменты публикации. Пропущенные во время остановки слоты не догоняются.

@@ -237,6 +237,9 @@ async def queue(update, context):
     rows = [f"Последние задания{paused}:"]
     for job in jobs:
         row = f"#{job['id']} · {job['status']} · {job['shortcode']}"
+        destination_ids = _destination_ids(job)
+        if destination_ids:
+            row += f"\n{destination_ids}"
         if job.get("tags"):
             row += f"\n{_short_tags(job['tags'])}"
         if job["status"] == "failed":
@@ -426,6 +429,20 @@ def _short_tags(tags, limit=180):
     if len(tags) <= limit:
         return tags
     return tags[: limit - 1].rstrip() + "…"
+
+
+def _destination_ids(job):
+    fields = (
+        ("IG", "instagram_media_id"),
+        ("FB", "facebook_media_id"),
+        ("TH", "threads_media_id"),
+        ("YT", "youtube_video_id"),
+    )
+    return " · ".join(
+        f"{label}:{job[column]}"
+        for label, column in fields
+        if job.get(column)
+    )
 
 
 def _queued_message(job_id, tags):

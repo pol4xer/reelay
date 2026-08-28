@@ -1,0 +1,149 @@
+import asyncio
+from datetime import datetime, timezone
+from pathlib import Path
+
+import httpx
+
+
+class YouTubePublisher:
+    def __init__(self, settings):
+        self.client_id = settings.youtube_client_id
+        self.client_secret = settings.youtube_client_secret
+        self.refresh_token = settings.youtube_refresh_token
+        self.privacy_status = settings.youtube_privacy_status
+
+    async def publish(self, video_path, caption="", source_title=""):
+        video_path = Path(video_path)
+        file_size = video_path.stat().st_size
+        timeout = httpx.Timeout(300.0, connect=30.0)
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            access_token = await self._access_token(client)
+            metadata = {
+                "snippet": {
+                    "title": self._title(source_title, caption),
+                    "description": (caption or "")[:5000],
+                    "categoryId": "22",
+                },
+                "status": {
+                    "privacyStatus": self.privacy_status,
+                    "selfDeclaredMadeForKids": False,
+                },
+            }
+            started = await client.post(
+                "https://www.googleapis.com/upload/youtube/v3/videos",
+                params={
+                    "uploadType": "resumable",
+                    "part": "snippet,status",
+                },
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json; charset=UTF-8",
+                    "X-Upload-Content-Length": str(file_size),
+                    "X-Upload-Content-Type": "video/mp4",
+                },
+                json=metadata,
+            )
+            if started.is_error:
+                raise RuntimeError(self._response_error(started))
+            upload_url = started.headers.get("location")
+            if not upload_url:
+                raise RuntimeError("YouTube did not return a resumable upload URL")
+
+            offset = 0
+            while offset < file_size:
+                uploaded = await client.put(
+                    upload_url,
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "video/mp4",
+                        "Content-Length": str(file_size - offset),
+                        "Content-Range": (
+                            f"bytes {offset}-{file_size - 1}/{file_size}"
+                        ),
+                    },
+                    content=self._read_file(video_path, offset),
+                )
+                if uploaded.status_code in {200, 201}:
+                    try:
+                        video_id = uploaded.json().get("id")
+                    except ValueError as error:
+                        raise RuntimeError("YouTube returned invalid JSON") from error
+                    if not video_id:
+                        raise RuntimeError("YouTube did not return a video id")
+                    return str(video_id)
+                if uploaded.status_code != 308:
+                    raise RuntimeError(self._response_error(uploaded))
+                received = uploaded.headers.get("range", "")
+                try:
+                    next_offset = int(received.rsplit("-", 1)[1]) + 1
+                except (IndexError, ValueError) as error:
+                    raise RuntimeError(
+                        "YouTube resumable upload returned no byte range"
+                    ) from error
+                if next_offset <= offset:
+                    raise RuntimeError("YouTube resumable upload made no progress")
+                offset = next_offset
+
+        raise RuntimeError("YouTube upload did not complete")
+
+    async def _access_token(self, client):
+        response = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "refresh_token": self.refresh_token,
+                "grant_type": "refresh_token",
+            },
+        )
+        if response.is_error:
+            raise RuntimeError(self._response_error(response))
+        try:
+            access_token = response.json().get("access_token")
+        except ValueError as error:
+            raise RuntimeError("Google OAuth returned invalid JSON") from error
+        if not access_token:
+            raise RuntimeError("Google OAuth did not return an access token")
+        return access_token
+
+    @staticmethod
+    def _title(source_title, caption):
+        title = str(source_title or "").strip()
+        if not title:
+            title = next(
+                (
+                    line.strip()
+                    for line in str(caption or "").splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")
+                ),
+                "",
+            )
+        if not title:
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+            title = f"Reelay Short {stamp}"
+        return title[:100]
+
+    @staticmethod
+    async def _read_file(video_path, offset):
+        with video_path.open("rb") as video:
+            video.seek(offset)
+            while True:
+                chunk = await asyncio.to_thread(video.read, 1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
+    @staticmethod
+    def _response_error(response):
+        try:
+            payload = response.json()
+        except ValueError:
+            return (response.text.strip() or f"YouTube HTTP {response.status_code}")[-700:]
+        error = payload.get("error", payload)
+        if isinstance(error, dict):
+            details = error.get("errors") or []
+            reason = details[0].get("reason") if details else ""
+            message = error.get("message") or str(error)
+            return f"{reason}: {message}".strip(": ")[-700:]
+        return str(error)[-700:]

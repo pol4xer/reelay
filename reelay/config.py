@@ -35,8 +35,61 @@ class Settings:
 
         self.meta_api_version = os.getenv("META_API_VERSION", "v26.0").strip()
         self.meta_ig_user_id = _required("META_IG_USER_ID")
+        self.meta_page_id = os.getenv("META_PAGE_ID", "").strip()
         self.meta_page_access_token = _required("META_PAGE_ACCESS_TOKEN")
         self.instagram_username = _required("INSTAGRAM_USERNAME")
+
+        self.publish_facebook = _bool("PUBLISH_FACEBOOK")
+        self.publish_threads = _bool("PUBLISH_THREADS")
+        self.publish_youtube = _bool("PUBLISH_YOUTUBE")
+
+        self.threads_api_version = os.getenv(
+            "THREADS_API_VERSION", "v1.0"
+        ).strip()
+        self.threads_user_id = os.getenv("THREADS_USER_ID", "").strip()
+        self.threads_access_token = os.getenv(
+            "THREADS_ACCESS_TOKEN", ""
+        ).strip()
+
+        self.youtube_client_id = os.getenv("YOUTUBE_CLIENT_ID", "").strip()
+        self.youtube_client_secret = os.getenv(
+            "YOUTUBE_CLIENT_SECRET", ""
+        ).strip()
+        self.youtube_refresh_token = os.getenv(
+            "YOUTUBE_REFRESH_TOKEN", ""
+        ).strip()
+        self.youtube_privacy_status = os.getenv(
+            "YOUTUBE_PRIVACY_STATUS", "private"
+        ).strip()
+
+        required_by_flag = {
+            "PUBLISH_FACEBOOK": (
+                self.publish_facebook,
+                {"META_PAGE_ID": self.meta_page_id},
+            ),
+            "PUBLISH_THREADS": (
+                self.publish_threads,
+                {
+                    "THREADS_USER_ID": self.threads_user_id,
+                    "THREADS_ACCESS_TOKEN": self.threads_access_token,
+                },
+            ),
+            "PUBLISH_YOUTUBE": (
+                self.publish_youtube,
+                {
+                    "YOUTUBE_CLIENT_ID": self.youtube_client_id,
+                    "YOUTUBE_CLIENT_SECRET": self.youtube_client_secret,
+                    "YOUTUBE_REFRESH_TOKEN": self.youtube_refresh_token,
+                },
+            ),
+        }
+        for flag, (enabled, values) in required_by_flag.items():
+            if enabled:
+                missing = [name for name, value in values.items() if not value]
+                if missing:
+                    raise RuntimeError(
+                        f"{flag}=true requires {', '.join(missing)}"
+                    )
 
         self.chrome_profile = os.getenv("CHROME_PROFILE", "Default").strip()
         self.timezone = os.getenv("TIMEZONE", "Europe/Istanbul").strip()

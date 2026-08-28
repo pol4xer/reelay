@@ -2,6 +2,14 @@ import sqlite3
 from pathlib import Path
 
 
+PLATFORM_MEDIA_COLUMNS = {
+    "instagram": "instagram_media_id",
+    "facebook": "facebook_media_id",
+    "threads": "threads_media_id",
+    "youtube": "youtube_video_id",
+}
+
+
 class QueueDB:
     def __init__(self, path):
         self.path = Path(path)
@@ -38,6 +46,9 @@ class QueueDB:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     published_at TEXT,
                     instagram_media_id TEXT,
+                    facebook_media_id TEXT,
+                    threads_media_id TEXT,
+                    youtube_video_id TEXT,
                     error TEXT
                 );
 
@@ -54,13 +65,17 @@ class QueueDB:
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(jobs)")
             }
-            if "tags" not in columns:
-                connection.execute(
-                    """
-                    ALTER TABLE jobs
-                    ADD COLUMN tags TEXT NOT NULL DEFAULT ''
-                    """
-                )
+            migrations = {
+                "tags": "TEXT NOT NULL DEFAULT ''",
+                "facebook_media_id": "TEXT",
+                "threads_media_id": "TEXT",
+                "youtube_video_id": "TEXT",
+            }
+            for column, declaration in migrations.items():
+                if column not in columns:
+                    connection.execute(
+                        f"ALTER TABLE jobs ADD COLUMN {column} {declaration}"
+                    )
             connection.commit()
         finally:
             connection.close()
@@ -221,16 +236,45 @@ class QueueDB:
             connection.close()
 
     def mark_published(self, job_id, media_id):
+        connection = self._connect()
+        try:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET status = 'published',
+                    published_at = CURRENT_TIMESTAMP,
+                    instagram_media_id = ?,
+                    error = NULL
+                WHERE id = ? AND status = 'publishing'
+                """,
+                (str(media_id), job_id),
+            )
+            connection.commit()
+            return cursor.rowcount > 0
+        finally:
+            connection.close()
+
+    def set_platform_media_id(self, job_id, platform, media_id):
+        column = PLATFORM_MEDIA_COLUMNS.get(platform)
+        if not column:
+            raise ValueError(f"Unsupported platform: {platform}")
+        if media_id is None or str(media_id) == "":
+            raise ValueError(f"Missing {platform} media id")
+        return self._update(
+            f"UPDATE jobs SET {column} = ? WHERE id = ?",
+            (str(media_id), job_id),
+        )
+
+    def mark_completed(self, job_id):
         return self._update(
             """
             UPDATE jobs
             SET status = 'published',
                 published_at = CURRENT_TIMESTAMP,
-                instagram_media_id = ?,
                 error = NULL
             WHERE id = ? AND status = 'publishing'
             """,
-            (str(media_id), job_id),
+            (job_id,),
         )
 
     def retry(self, job_id):

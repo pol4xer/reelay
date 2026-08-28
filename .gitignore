@@ -2,5 +2,6 @@
 .venv/
 __pycache__/
 data/
+secrets/
 *.pyc
 .DS_Store

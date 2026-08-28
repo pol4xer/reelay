@@ -7,9 +7,12 @@ from .bot import post_init, register_handlers
 from .config import Settings
 from .db import QueueDB
 from .downloader import InstagramDownloader
+from .facebook import FacebookPublisher
 from .instagram import InstagramPublisher
 from .scheduler import register_schedule
 from .tagger import AutoTagger
+from .threads import ThreadsPublisher
+from .youtube import YouTubePublisher
 
 
 def main():
@@ -23,6 +26,14 @@ def main():
     db = QueueDB(settings.db_path)
     db.init()
 
+    destinations = {}
+    if settings.publish_facebook:
+        destinations["facebook"] = FacebookPublisher(settings)
+    if settings.publish_threads:
+        destinations["threads"] = ThreadsPublisher(settings)
+    if settings.publish_youtube:
+        destinations["youtube"] = YouTubePublisher(settings)
+
     application = (
         Application.builder()
         .token(settings.telegram_token)
@@ -35,6 +46,7 @@ def main():
             "db": db,
             "downloader": InstagramDownloader(settings),
             "publisher": InstagramPublisher(settings),
+            "destinations": destinations,
             "tagger": AutoTagger(settings),
         }
     )

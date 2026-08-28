@@ -1,0 +1,99 @@
+# Reelay: подключение Facebook, Threads и YouTube
+
+Все дополнительные направления выключены, пока их credentials не добавлены в локальный `.env` и не пройдена отдельная тестовая публикация.
+
+## 1. Facebook Page
+
+Что уже есть: Meta App `Reelay`, Page `your Facebook Page`, Page ID, App ID/Secret и текущий Page token. Не хватает права `pages_manage_posts`.
+
+1. Откройте [Meta App Dashboard](https://developers.facebook.com/apps/) и выберите `Reelay`.
+2. Откройте **Use cases**. Добавьте или настройте use case управления контентом Facebook Page.
+3. В permissions/features добавьте `pages_manage_posts`.
+4. Откройте [Graph API Explorer](https://developers.facebook.com/tools/explorer/).
+5. Справа выберите Meta App `Reelay` и `User Token`.
+6. Добавьте permissions:
+   - `pages_show_list`
+   - `pages_read_engagement`
+   - `pages_manage_posts`
+   - `business_management`
+7. Нажмите **Generate Access Token** и подтвердите доступ к Page `your Facebook Page`.
+8. Выполните запрос:
+
+   ```text
+   GET /me/accounts?fields=id,name,access_token,tasks
+   ```
+
+9. Убедитесь, что `your Facebook Page` возвращается с задачей `CREATE_CONTENT`.
+
+Что передать Codex: новый **User Access Token** из шага 7. App ID, App Secret и Page ID повторно не нужны. Codex обменяет токен на long-lived и сам получит новый Page Access Token.
+
+Официальные ссылки: [Facebook Reels Publishing](https://developers.facebook.com/docs/video-api/guides/reels-publishing/), [`pages_manage_posts`](https://developers.facebook.com/docs/permissions/reference/pages_manage_posts/), [Meta Postman collection](https://www.postman.com/meta/facebook/folder/simabyk/reels-publishing).
+
+## 2. Threads
+
+1. Убедитесь, что нужный профиль Threads создан и вы можете войти в него.
+2. Откройте [Meta App Dashboard](https://developers.facebook.com/apps/).
+3. В `Reelay` попробуйте **Add use case → Access the Threads API**. Если Meta не предлагает добавить его в существующее приложение, создайте отдельное приложение `Reelay Threads` с этим use case.
+4. Откройте **Threads API → Settings** и скопируйте именно **Threads App ID** и **Threads App Secret**. Они отличаются от обычных Meta App credentials.
+5. В **App roles / Roles** добавьте свой Threads username как **Threads Tester**.
+6. В Threads откройте **Settings → Account → Website permissions → Tester invitations** и примите приглашение.
+7. Вернитесь в App Dashboard, откройте **Threads API → User Token Generator** и нажмите **Generate Token** напротив своего профиля.
+8. Разрешите:
+   - `threads_basic`
+   - `threads_content_publish`
+
+Что передать Codex:
+
+```text
+Threads username:
+Threads App ID:
+Threads App Secret:
+Threads User Access Token:
+```
+
+Codex определит Threads User ID, обменяет токен на long-lived и сохранит его локально. Для видео Reelay будет сразу после Instagram-публикации получать публичный временный Instagram CDN URL. Это уже проверено на опубликованном Reel (`206 video/mp4`), поэтому отдельный сервер для текущего MVP не нужен.
+
+Официальные ссылки: [Threads Get Started](https://developers.facebook.com/docs/threads/get-started), [Tokens and permissions](https://developers.facebook.com/docs/threads/get-started/get-access-tokens-and-permissions), [Publishing](https://developers.facebook.com/docs/threads/posts), [официальный sample](https://github.com/fbsamples/threads_api).
+
+## 3. YouTube Shorts
+
+1. Создайте или выберите проект в [Google Cloud Console](https://console.cloud.google.com/projectcreate).
+2. Откройте [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) и нажмите **Enable**.
+3. Откройте **Google Auth Platform**:
+   - **Branding**: имя `Reelay`, ваш support email;
+   - **Audience**: `External`;
+   - **Test users**: добавьте Google email, которому принадлежит YouTube-канал;
+   - **Data Access**: добавьте scope `https://www.googleapis.com/auth/youtube.upload`.
+4. Откройте **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+5. Выберите application type **Desktop app**, назовите `Reelay Local`.
+6. Скачайте JSON через **Download JSON**. Не открывайте и не копируйте отдельные поля вручную.
+7. Проверьте нужный канал в [YouTube Studio](https://studio.youtube.com/) и скопируйте URL или `@handle`.
+
+Что передать Codex:
+
+```text
+Путь к скачанному OAuth client JSON:
+YouTube channel URL или @handle:
+```
+
+Codex перенесёт JSON в игнорируемую папку проекта, запустит локальное OAuth-окно, а вы выберете нужный канал и нажмёте **Allow**. После этого refresh token сохранится только в `.env`.
+
+Первый тест будет `private`. Проекты YouTube API, не прошедшие compliance audit, принудительно оставляют API-загрузки приватными. Для публичных Shorts затем заполните [YouTube API Audit and Quota Extension Form](https://support.google.com/youtube/contact/yt_api_form). В форме укажите, что приложение локально загружает только авторизованный пользователем контент в его собственный канал через `videos.insert`.
+
+Официальные ссылки: [Upload a video](https://developers.google.com/youtube/v3/guides/uploading_a_video), [`videos.insert`](https://developers.google.com/youtube/v3/docs/videos/insert), [OAuth for installed apps](https://developers.google.com/youtube/v3/guides/auth/installed-apps), [3-minute Shorts](https://support.google.com/youtube/answer/15424877), [API audit](https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits).
+
+## Ответ одним сообщением
+
+Когда шаги выполнены, пришлите:
+
+```text
+Facebook User Access Token:
+
+Threads username:
+Threads App ID:
+Threads App Secret:
+Threads User Access Token:
+
+YouTube OAuth JSON path:
+YouTube channel URL или @handle:
+```

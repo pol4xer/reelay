@@ -5,8 +5,20 @@ from datetime import datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .db import PLATFORM_MEDIA_COLUMNS
+
 
 _PUBLISH_LOCK = asyncio.Lock()
+DESTINATION_COLUMNS = {
+    platform: PLATFORM_MEDIA_COLUMNS[platform]
+    for platform in ("facebook", "threads", "youtube")
+}
+PLATFORM_LABELS = {
+    "instagram": "Instagram",
+    "facebook": "Facebook",
+    "threads": "Threads",
+    "youtube": "YouTube",
+}
 
 
 def register_schedule(application):
@@ -107,7 +119,6 @@ async def publish_next(context):
     async with _PUBLISH_LOCK:
         settings = context.application.bot_data["settings"]
         db = context.application.bot_data["db"]
-        publisher = context.application.bot_data["publisher"]
 
         if db.is_paused():
             return
@@ -120,24 +131,62 @@ async def publish_next(context):
         if not job or not db.mark_publishing(job["id"]):
             return
 
-        try:
-            media_id = await publisher.publish(
-                job["video_path"], _publish_caption(job)
-            )
-        except Exception as exc:
-            db.set_failed(job["id"], str(exc))
-            await _notify_owner(
-                context,
-                settings,
-                db,
-                (
-                    f"Ошибка публикации #{job['id']}: {exc}\n"
-                    f"Источник: {job['source_url']}"
-                ),
-            )
-            return
+        caption = _publish_caption(job)
+        if not job.get("instagram_media_id"):
+            try:
+                publisher = context.application.bot_data["publisher"]
+                media_id = await publisher.publish(job["video_path"], caption)
+                if not db.set_platform_media_id(
+                    job["id"], "instagram", media_id
+                ):
+                    raise RuntimeError("Instagram checkpoint was not saved")
+                job["instagram_media_id"] = str(media_id)
+            except Exception as exc:
+                await _fail_platform(
+                    context, settings, db, job, "instagram", exc
+                )
+                return
 
-        db.mark_published(job["id"], media_id)
+        destinations = context.application.bot_data.get("destinations") or {}
+        for platform, destination in destinations.items():
+            column = DESTINATION_COLUMNS.get(platform)
+            if not column:
+                await _fail_platform(
+                    context,
+                    settings,
+                    db,
+                    job,
+                    platform,
+                    RuntimeError("unsupported destination"),
+                )
+                return
+            if destination is None or job.get(column):
+                continue
+
+            try:
+                if platform == "threads":
+                    media_id = await destination.publish(
+                        job["instagram_media_id"], caption
+                    )
+                else:
+                    media_id = await destination.publish(
+                        job["video_path"], caption
+                    )
+                if not db.set_platform_media_id(
+                    job["id"], platform, media_id
+                ):
+                    raise RuntimeError(
+                        f"{PLATFORM_LABELS[platform]} checkpoint was not saved"
+                    )
+                job[column] = str(media_id)
+            except Exception as exc:
+                await _fail_platform(
+                    context, settings, db, job, platform, exc
+                )
+                return
+
+        if not db.mark_completed(job["id"]):
+            return
 
         if settings.delete_after_publish:
             await asyncio.to_thread(
@@ -146,12 +195,25 @@ async def publish_next(context):
                 job["video_path"],
             )
 
+        completed = db.get_job(job["id"]) or job
         await _notify_owner(
-            context,
-            settings,
-            db,
-            f"Опубликовано #{job['id']} в Instagram. Media ID: {media_id}",
+            context, settings, db, _success_message(completed)
         )
+
+
+async def _fail_platform(context, settings, db, job, platform, error):
+    label = PLATFORM_LABELS.get(platform, str(platform))
+    reason = str(error).strip() or error.__class__.__name__
+    db.set_failed(job["id"], f"{label}: {reason}")
+    await _notify_owner(
+        context,
+        settings,
+        db,
+        (
+            f"Ошибка публикации #{job['id']} · {label}: {reason}\n"
+            f"Источник: {job['source_url']}"
+        ),
+    )
 
 
 async def _notify_owner(context, settings, db, message):
@@ -172,6 +234,15 @@ def _publish_caption(job):
     tags = [tag for tag in tags if tag.casefold() not in existing]
     tag_line = " ".join(tags)
     return "\n\n".join(value for value in (caption, tag_line) if value)
+
+
+def _success_message(job):
+    lines = [f"Опубликовано #{job['id']}:"]
+    for platform in ("instagram", "facebook", "threads", "youtube"):
+        media_id = job.get(PLATFORM_MEDIA_COLUMNS[platform])
+        if media_id:
+            lines.append(f"{PLATFORM_LABELS[platform]}: {media_id}")
+    return "\n".join(lines)
 
 
 def _delete_job_video_directory(video_root, video_path):
