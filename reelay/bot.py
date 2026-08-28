@@ -205,11 +205,11 @@ async def add_link(update, context):
         await update.effective_message.reply_text(
             _queued_message(job_id, tags)
         )
-    except Exception as error:
-        db.set_failed(job_id, error)
-        await update.effective_message.reply_text(
-            f"Ошибка #{job_id}: {_short_error(error)}"
-        )
+    except Exception:
+        db.delete_job(job_id)
+        settings = context.application.bot_data["settings"]
+        shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
+        await update.effective_message.reply_text(f"Пропущено: #{job_id}")
 
 
 async def queue(update, context):
@@ -317,11 +317,11 @@ async def retry(update, context):
         await update.effective_message.reply_text(
             _queued_message(job_id, tags)
         )
-    except Exception as error:
-        db.set_failed(job_id, error)
-        await update.effective_message.reply_text(
-            f"Ошибка #{job_id}: {_short_error(error)}"
-        )
+    except Exception:
+        db.delete_job(job_id)
+        settings = context.application.bot_data["settings"]
+        shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
+        await update.effective_message.reply_text(f"Пропущено: #{job_id}")
 
 
 async def pause(update, context):

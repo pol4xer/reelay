@@ -18,16 +18,25 @@ class InstagramDownloader:
 
             try:
                 return await self._download_once(job_dir, url)
-            except RuntimeError:
-                self._reset_job_dir(job_dir)
+            except Exception as error:
+                shutil.rmtree(job_dir, ignore_errors=True)
+                if not self.settings.allow_private_sources:
+                    raise RuntimeError(self._short_failure(error)) from error
+                job_dir.mkdir(parents=True, exist_ok=True)
 
             profile = self.settings.chrome_profile.strip()
             browser = f"chrome:{profile}" if profile else "chrome"
             try:
                 return await self._download_once(job_dir, url, browser)
-            except RuntimeError:
+            except Exception as error:
                 shutil.rmtree(job_dir, ignore_errors=True)
-                raise
+                raise RuntimeError(self._short_failure(error)) from error
+
+    @staticmethod
+    def _short_failure(error):
+        lines = [line for line in str(error).splitlines() if line.strip()]
+        message = "\n".join(lines[-3:]) or error.__class__.__name__
+        return message[-700:]
 
     def _job_dir(self, job_id):
         name = str(job_id)
