@@ -59,7 +59,21 @@ Threads App Secret:
 Threads User Access Token:
 ```
 
-Codex определит Threads User ID, обменяет токен на long-lived и сохранит его локально. Для видео Reelay будет сразу после Instagram-публикации получать публичный временный Instagram CDN URL. Это уже проверено на опубликованном Reel (`206 video/mp4`), поэтому отдельный сервер для текущего MVP не нужен.
+Codex определит Threads User ID, обменяет токен на long-lived и сохранит его локально.
+
+Threads API не поддерживает загрузку локального файла: он принимает только
+публичный `video_url`. Instagram CDN оказался ненадёжным источником для Threads
+video processing. Поэтому Reelay перед каждой Threads-публикацией:
+
+1. создаёт временный MP4 H.264 + AAC-LC без edit lists;
+2. поднимает локальный сервер, отдающий только этот `video.mp4`;
+3. открывает одноразовый Cloudflare Quick Tunnel;
+4. ждёт `FINISHED`, публикует контейнер и сразу закрывает туннель;
+5. удаляет временный файл независимо от результата.
+
+Исполняемый `cloudflared` должен находиться в `data/bin/cloudflared` или в
+`PATH`. Постоянный сервер не нужен, но во время обработки один MP4 временно
+проходит через инфраструктуру Cloudflare и доступен по случайному HTTPS URL.
 
 Официальные ссылки: [Threads Get Started](https://developers.facebook.com/docs/threads/get-started), [Tokens and permissions](https://developers.facebook.com/docs/threads/get-started/get-access-tokens-and-permissions), [Publishing](https://developers.facebook.com/docs/threads/posts), [официальный sample](https://github.com/fbsamples/threads_api).
 
