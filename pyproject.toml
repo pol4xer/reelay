@@ -1,0 +1,14 @@
+[project]
+name = "reelay"
+version = "0.1.0"
+description = "Local Telegram queue for scheduled Instagram Reels publishing"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28,<1",
+    "python-dotenv>=1.1,<2",
+    "python-telegram-bot[job-queue]>=22,<23",
+    "yt-dlp[curl-cffi,default]>=2026.8.19",
+]
+
+[tool.uv]
+package = false
