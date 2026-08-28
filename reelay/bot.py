@@ -102,9 +102,11 @@ async def add_link(update, context):
     first_line, separator, caption = text.partition("\n")
     parsed = _instagram_url(first_line)
     if not parsed:
-        if _attach_pending_caption(context, text):
+        attached = await _attach_pending_caption(context, text)
+        if attached:
+            job_id, tags = attached
             await update.effective_message.reply_text(
-                "Caption добавлен к последнему видео."
+                _caption_updated_message(job_id, tags)
             )
             return
         await update.effective_message.reply_text(
@@ -121,8 +123,21 @@ async def add_link(update, context):
     if existing:
         if caption and db.set_caption(existing["id"], caption):
             db.delete_setting("pending_caption_job_id")
+            tags = ""
+            video_path = (
+                Path(existing["video_path"])
+                if existing.get("video_path")
+                else None
+            )
+            if video_path and video_path.is_file():
+                try:
+                    tagger = context.application.bot_data["tagger"]
+                    tags = await tagger.generate(video_path, caption)
+                    db.set_tags(existing["id"], tags)
+                except Exception:
+                    tags = ""
             await update.effective_message.reply_text(
-                f"Caption обновлён: #{existing['id']}"
+                _caption_updated_message(existing["id"], tags)
             )
             return
         if not caption and existing["status"] in {
@@ -155,7 +170,7 @@ async def add_link(update, context):
     tagger = context.application.bot_data["tagger"]
     try:
         path = await downloader.download(job_id, source_url)
-        tags = await tagger.generate(path)
+        tags = await tagger.generate(path, caption)
         db.set_downloaded(job_id, path, tags)
         await update.effective_message.reply_text(
             _queued_message(job_id, tags)
@@ -267,7 +282,7 @@ async def retry(update, context):
     await update.effective_message.reply_text(f"Скачиваю #{job_id} заново…")
     try:
         path = await downloader.download(job_id, job["source_url"])
-        tags = await tagger.generate(path)
+        tags = await tagger.generate(path, job.get("caption") or "")
         db.set_downloaded(job_id, path, tags)
         await update.effective_message.reply_text(
             _queued_message(job_id, tags)
@@ -303,7 +318,7 @@ async def publish_now(update, context):
     await publish_next(context)
 
 
-def _attach_pending_caption(context, caption):
+async def _attach_pending_caption(context, caption):
     db = context.application.bot_data["db"]
     pending = db.get_setting("pending_caption_job_id")
     if not pending or not str(pending).isdigit():
@@ -317,7 +332,17 @@ def _attach_pending_caption(context, caption):
     if not db.set_caption(job["id"], caption):
         return False
     db.delete_setting("pending_caption_job_id")
-    return True
+
+    tags = ""
+    video_path = Path(job["video_path"]) if job.get("video_path") else None
+    if video_path and video_path.is_file():
+        try:
+            tagger = context.application.bot_data["tagger"]
+            tags = await tagger.generate(video_path, caption)
+            db.set_tags(job["id"], tags)
+        except Exception:
+            tags = ""
+    return job["id"], tags
 
 
 def _short_error(error, limit=700):
@@ -334,6 +359,13 @@ def _short_tags(tags, limit=180):
 
 def _queued_message(job_id, tags):
     message = f"В очереди: #{job_id}"
+    if tags:
+        message += f"\n{tags}"
+    return message
+
+
+def _caption_updated_message(job_id, tags):
+    message = f"Caption обновлён: #{job_id}"
     if tags:
         message += f"\n{tags}"
     return message
