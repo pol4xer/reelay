@@ -1,0 +1,22 @@
+.git
+.gitignore
+.dockerignore
+.env
+.env.*
+.venv
+.ruff_cache
+__pycache__
+*.py[cod]
+*.log
+.DS_Store
+
+data
+secrets
+
+assets
+docs
+deploy/macos
+scripts
+Makefile
+README.md
+Reelay Settings.command

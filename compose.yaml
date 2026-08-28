@@ -1,0 +1,33 @@
+name: reelay
+
+services:
+  reelay:
+    image: ${REELAY_IMAGE:-reelay:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UV_VERSION: ${UV_VERSION:-0.9.28}
+    env_file:
+      - ${REELAY_ENV_FILE:-.env}
+    environment:
+      REELAY_DATA_DIR: /app/data
+    init: true
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 30m
+    volumes:
+      - type: bind
+        source: ${REELAY_HOST_DATA_DIR:-./data}
+        target: /app/data
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

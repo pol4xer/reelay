@@ -7,6 +7,17 @@ ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
 
+def _absolute_path(name, default):
+    value = os.getenv(name, "").strip()
+    path = Path(value).expanduser() if value else Path(default)
+    if not path.is_absolute():
+        raise RuntimeError(f"{name} must be an absolute path")
+    return path
+
+
+DATA_DIR = _absolute_path("REELAY_DATA_DIR", ROOT / "data")
+
+
 def _required(name):
     value = os.getenv(name, "").strip()
     if not value:
@@ -21,7 +32,7 @@ def _bool(name, default="false"):
 class Settings:
     def __init__(self):
         self.root = ROOT
-        self.data_dir = ROOT / "data"
+        self.data_dir = DATA_DIR
         self.video_dir = self.data_dir / "videos"
         self.db_path = self.data_dir / "reelay.db"
 

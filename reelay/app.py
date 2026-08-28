@@ -18,6 +18,9 @@ def build_application(settings=None):
     settings = settings or Settings()
     db = QueueDB(settings.db_path)
     db.init()
+    rebased = db.rebase_existing_video_paths(settings.video_dir)
+    if rebased:
+        LOGGER.warning("Rebased moved video paths: %s", rebased)
     tagger = AutoTagger(settings)
     publishers = PublisherRegistry.from_settings(settings)
     recovery = db.recover_interrupted_jobs()

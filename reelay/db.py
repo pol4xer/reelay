@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -93,6 +94,46 @@ class QueueDB:
         try:
             row = connection.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
             return row["value"] if row else default
+        finally:
+            connection.close()
+
+    def rebase_existing_video_paths(self, video_dir):
+        video_dir = Path(video_dir)
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT id, shortcode, video_path FROM jobs WHERE video_path IS NOT NULL"
+            ).fetchall()
+            rebased = []
+            for row in rows:
+                current = Path(row["video_path"])
+                if current.is_file():
+                    continue
+                candidates = (
+                    video_dir / str(row["id"]) / current.name,
+                    video_dir / str(row["id"]) / "video.mp4",
+                )
+                replacement = None
+                for candidate in candidates:
+                    if not candidate.is_file():
+                        continue
+                    info_path = candidate.with_name("video.info.json")
+                    try:
+                        source_id = str(json.loads(info_path.read_text(encoding="utf-8"))["id"])
+                    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    if source_id == row["shortcode"]:
+                        replacement = candidate
+                        break
+                if replacement is None:
+                    continue
+                connection.execute(
+                    "UPDATE jobs SET video_path = ? WHERE id = ?",
+                    (str(replacement), row["id"]),
+                )
+                rebased.append(row["id"])
+            connection.commit()
+            return rebased
         finally:
             connection.close()
 

@@ -20,6 +20,7 @@ from urllib.parse import unquote, urlsplit
 
 from dotenv import dotenv_values
 
+from .config import DATA_DIR
 from .config_schema import (
     ALLOWED_KEYS,
     SECRET_KEYS,
@@ -34,7 +35,7 @@ ENV_PATH = ROOT / ".env"
 EXAMPLE_ENV_PATH = ROOT / ".env.example"
 STATIC_DIR = Path(__file__).resolve().with_name("config_ui_static")
 SERVICE_SCRIPT = ROOT / "scripts" / "service.sh"
-DB_PATH = ROOT / "data" / "reelay.db"
+DB_PATH = DATA_DIR / "reelay.db"
 HOST = "127.0.0.1"
 PORT = 8765
 MAX_REQUEST_BYTES = 256 * 1024

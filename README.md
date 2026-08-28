@@ -138,3 +138,19 @@ chmod +x server-preflight.sh
 systemd/Docker/tooling, проверку SQLite WAL и доступность всех необходимых DNS/HTTPS endpoint'ов.
 По умолчанию проверяется будущий runtime-путь `/opt/reelay/data`; другой абсолютный путь можно
 передать единственным аргументом скрипта.
+
+## Docker
+
+Linux-контейнер включает Python 3.13, frozen dependencies, FFmpeg/ffprobe и multi-arch
+`cloudflared`. Запуск из `/opt/reelay`:
+
+```bash
+sudo install -d -o 10001 -g 10001 -m 0700 /opt/reelay/data
+docker compose up --detach --build
+docker compose logs --follow --tail=100 reelay
+```
+
+Compose монтирует `./data` в `/app/data`, автоматически перезапускает контейнер и не открывает
+входящие порты. Nginx и TLS для основного бота не требуются: Telegram использует long polling,
+публикации идут исходящими HTTPS-запросами, а Threads получает одноразовый HTTPS Quick Tunnel.
+Подробности и перенос существующей очереди: [`deploy/docker/README.md`](deploy/docker/README.md).

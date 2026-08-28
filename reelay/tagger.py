@@ -3,6 +3,7 @@ import json
 import random
 import re
 import shutil
+import sys
 from pathlib import Path
 
 HASHTAG = re.compile(r"(?<!\w)#[\w]+", re.UNICODE)
@@ -973,6 +974,8 @@ class AutoTagger:
         return normalized_keyword in normalized_text.split()
 
     async def _vision_evidence(self, video_path):
+        if sys.platform != "darwin":
+            return {"labels": [], "texts": []}
         frames = await self._extract_frames(video_path)
         try:
             await self._ensure_binary()

@@ -165,10 +165,11 @@ class QuickTunnelVideoTransport:
             await process.wait()
 
     def _resolve_cloudflared(self):
-        candidates = [self.cloudflared_path]
+        candidates = []
         from_path = shutil.which("cloudflared")
         if from_path:
             candidates.append(Path(from_path))
+        candidates.append(self.cloudflared_path)
         for candidate in candidates:
             if candidate.is_file() and os.access(candidate, os.X_OK):
                 return candidate
