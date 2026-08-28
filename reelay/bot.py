@@ -19,9 +19,9 @@ BOT_COMMANDS = [
     BotCommand("queue", "Показать очередь"),
     BotCommand("posts", "Показать или изменить постов в день"),
     BotCommand("now", "Опубликовать следующее видео сейчас"),
-    BotCommand("file", "Скачать MP4: /file ID"),
-    BotCommand("drop", "Удалить задание: /drop ID"),
-    BotCommand("retry", "Повторить failed: /retry ID"),
+    BotCommand("file", "Скачать MP4 по ID или shortcode"),
+    BotCommand("drop", "Удалить по ID или shortcode"),
+    BotCommand("retry", "Повторить failed по ID или shortcode"),
     BotCommand("pause", "Приостановить публикации"),
     BotCommand("resume", "Возобновить публикации"),
 ]
@@ -56,11 +56,20 @@ def _authorized(update, context):
     )
 
 
-def _job_id(context):
-    if len(context.args) != 1 or not context.args[0].isdigit():
+def _job_from_args(context):
+    if len(context.args) != 1:
         return None
-    value = int(context.args[0])
-    return value if value > 0 else None
+
+    selector = context.args[0]
+    numeric = selector[1:] if selector.startswith("#") else selector
+    db = context.application.bot_data["db"]
+    if numeric.isdigit() and int(numeric) > 0:
+        job = db.get_job(int(numeric))
+        if job:
+            return job
+    if SHORTCODE.fullmatch(selector):
+        return db.get_job_by_shortcode(selector)
+    return None
 
 
 def _instagram_url(line):
@@ -242,12 +251,13 @@ async def send_file(update, context):
     if not _authorized(update, context):
         return
 
-    job_id = _job_id(context)
-    if job_id is None:
-        await update.effective_message.reply_text("Использование: /file ID")
+    job = _job_from_args(context)
+    if not job:
+        await update.effective_message.reply_text(
+            "Использование: /file 33 или /file SHORTCODE"
+        )
         return
 
-    job = context.application.bot_data["db"].get_job(job_id)
     path = Path(job["video_path"]) if job and job["video_path"] else None
     if not path or not path.is_file():
         await update.effective_message.reply_text("Файл не найден.")
@@ -268,16 +278,15 @@ async def drop(update, context):
     if not _authorized(update, context):
         return
 
-    job_id = _job_id(context)
-    if job_id is None:
-        await update.effective_message.reply_text("Использование: /drop ID")
+    job = _job_from_args(context)
+    if not job:
+        await update.effective_message.reply_text(
+            "Использование: /drop 33 или /drop SHORTCODE"
+        )
         return
 
     db = context.application.bot_data["db"]
-    job = db.get_job(job_id)
-    if not job:
-        await update.effective_message.reply_text("Задание не найдено.")
-        return
+    job_id = job["id"]
     if job["status"] == "publishing":
         await update.effective_message.reply_text("Сейчас публикуется.")
         return
@@ -292,16 +301,15 @@ async def retry(update, context):
     if not _authorized(update, context):
         return
 
-    job_id = _job_id(context)
-    if job_id is None:
-        await update.effective_message.reply_text("Использование: /retry ID")
+    job = _job_from_args(context)
+    if not job:
+        await update.effective_message.reply_text(
+            "Использование: /retry 33 или /retry SHORTCODE"
+        )
         return
 
     db = context.application.bot_data["db"]
-    job = db.get_job(job_id)
-    if not job:
-        await update.effective_message.reply_text("Задание не найдено.")
-        return
+    job_id = job["id"]
     if job["status"] != "failed":
         await update.effective_message.reply_text("Повтор доступен только для failed.")
         return
@@ -454,9 +462,9 @@ def _help_message(times):
         "/queue — показать последние задания\n"
         "/posts [N] — показать расписание или задать 1–12 постов в день\n"
         "/now — опубликовать следующее видео сейчас\n"
-        "/file ID — отправить MP4 в Telegram\n"
-        "/drop ID — удалить задание и локальный файл\n"
-        "/retry ID — повторить задание со статусом failed\n"
+        "/file ID|SHORTCODE — отправить MP4 в Telegram\n"
+        "/drop ID|SHORTCODE — удалить задание и локальный файл\n"
+        "/retry ID|SHORTCODE — повторить failed\n"
         "/pause — приостановить публикации\n"
         "/resume — возобновить публикации\n\n"
         f"Текущее расписание: {len(times)} в день — {', '.join(times)}"
