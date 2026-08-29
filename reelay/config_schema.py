@@ -461,6 +461,18 @@ CONFIG_SCHEMA = (
         default="true",
     ),
     _field(
+        "VIDEO_WATERMARK_ENABLED",
+        "schedule_storage",
+        "Reelay watermark",
+        field_type="toggle",
+        required=True,
+        help_text=(
+            "Добавлять маленький полупрозрачный логотип Reelay в Instagram, Facebook, Threads "
+            "и YouTube. TikTok всегда получает чистый оригинал по требованиям платформы."
+        ),
+        default="true",
+    ),
+    _field(
         "AUTO_TAGS",
         "schedule_storage",
         "Generate hashtags",

@@ -130,6 +130,10 @@ for Business. Reelay передаёт локальный MP4 через `FILE_UP
 `SEND_TO_USER_INBOX` и сохраняет `publish_id`. Видео ещё не опубликовано: откройте уведомление
 TikTok, добавьте caption из Telegram и вручную нажмите **Publish**.
 
+Reelay намеренно отправляет в TikTok чистый исходный MP4. Автоматический знак Reelay применяется
+только к Instagram, Facebook, Threads и YouTube: TikTok Content Sharing Guidelines запрещают
+интеграциям добавлять собственные promotional watermarks/logo в публикуемый контент.
+
 1. Войдите в [TikTok for Developers](https://developers.tiktok.com/signup/) обычным email.
 2. Откройте **Manage apps → Connect an app** и создайте приложение `Reelay`.
 3. Переключитесь в **Sandbox** и нажмите **Create Sandbox**.

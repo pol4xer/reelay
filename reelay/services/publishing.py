@@ -32,11 +32,12 @@ class PublicationReport:
 class PublishingService:
     """Owns the queue-to-platform workflow; publishers only upload media."""
 
-    def __init__(self, settings, db, publishers: PublisherRegistry, tagger):
+    def __init__(self, settings, db, publishers: PublisherRegistry, tagger, watermarker):
         self.settings = settings
         self.db = db
         self.publishers = publishers
         self.tagger = tagger
+        self.watermarker = watermarker
         self._lock = asyncio.Lock()
 
     async def publish_next(self) -> PublicationReport:
@@ -75,6 +76,7 @@ class PublishingService:
             )
 
         caption = compose_caption(job)
+        watermarked_video_path = None
         for platform, publisher in self.publishers.items():
             column = PLATFORM_MEDIA_COLUMNS[platform.value]
             if _checkpoint_complete(platform, job.get(column)):
@@ -87,6 +89,11 @@ class PublishingService:
                 continue
 
             try:
+                publish_video_path = video_path
+                if platform is not Platform.TIKTOK:
+                    if watermarked_video_path is None:
+                        watermarked_video_path = await self.watermarker.prepare(video_path)
+                    publish_video_path = watermarked_video_path
                 title = ""
                 if platform is Platform.YOUTUBE:
                     title = await self.tagger.generate_title(
@@ -95,7 +102,7 @@ class PublishingService:
                     )
                 result = await publisher.publish(
                     PublishRequest(
-                        video_path=video_path,
+                        video_path=publish_video_path,
                         caption=caption,
                         title=title,
                         job_id=job_id,

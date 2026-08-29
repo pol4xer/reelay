@@ -551,9 +551,10 @@ async def youtube_test(update, context):
     try:
         tagger = context.application.bot_data["tagger"]
         title = await tagger.generate_title(video_path, job.get("caption") or "")
+        publish_video_path = await context.application.bot_data["watermarker"].prepare(video_path)
         result = await publisher.publish(
             PublishRequest(
-                video_path=video_path,
+                video_path=publish_video_path,
                 caption=compose_caption(job),
                 title=title,
             )

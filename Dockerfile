@@ -41,6 +41,7 @@ RUN uv sync --frozen --no-dev --no-install-project \
     && cloudflared --version
 
 COPY --chown=10001:10001 reelay ./reelay
+COPY --chown=10001:10001 assets/reelay-telegram-avatar.png ./assets/reelay-telegram-avatar.png
 
 RUN mkdir -p /app/data \
     && chown 10001:10001 /app/data

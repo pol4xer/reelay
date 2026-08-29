@@ -6,6 +6,7 @@ from .bot import post_init, post_stop, register_handlers
 from .config import Settings
 from .db import QueueDB
 from .downloader import InstagramDownloader
+from .media import ReelayWatermarker
 from .publishers import PublisherRegistry
 from .scheduler import register_schedule
 from .services import PublishingService
@@ -26,6 +27,7 @@ def build_application(settings=None):
     if ignored:
         LOGGER.info("TikTok was not required for previously completed jobs: %s", ignored)
     publishers = PublisherRegistry.from_settings(settings, token_store=db)
+    watermarker = ReelayWatermarker(settings)
     recovery = db.recover_interrupted_jobs()
     if any(recovery.values()):
         LOGGER.warning("Recovered interrupted jobs: %s", recovery)
@@ -37,6 +39,7 @@ def build_application(settings=None):
         db=db,
         publishers=publishers,
         tagger=tagger,
+        watermarker=watermarker,
     )
 
     application = (
@@ -55,6 +58,7 @@ def build_application(settings=None):
             "publishers": publishers,
             "publishing_service": publishing_service,
             "tagger": tagger,
+            "watermarker": watermarker,
         }
     )
     register_handlers(application)

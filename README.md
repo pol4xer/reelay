@@ -41,6 +41,12 @@ Facebook Page, Threads, YouTube и TikTok Inbox publishers подключены 
 черновик и уведомление; caption нужно добавить и опубликовать вручную в TikTok. Настройка
 credentials: [`docs/CROSSPOSTING_SETUP.md`](docs/CROSSPOSTING_SETUP.md).
 
+При `VIDEO_WATERMARK_ENABLED=true` Reelay один раз создаёт рядом с оригиналом кэшированный
+MP4 с маленьким полупрозрачным логотипом Reelay в верхнем левом углу. Этот derivative повторно используется
+для Instagram, Facebook, Threads и YouTube, включая `/retry`. TikTok всегда получает чистый
+оригинал без клиентского watermark согласно Content Sharing Guidelines. После успешной публикации
+`DELETE_AFTER_PUBLISH=true` удаляет всю папку задания вместе с обоими файлами.
+
 Команды: `/help`, `/status`, `/queue`, `/file ID`, `/drop ID`, `/retry ID`, `/now`,
 `/times [HH:MM ...]`, `/posts [N]`, `/pause`, `/resume`.
 
@@ -70,8 +76,9 @@ make check
 make queue-audit
 ```
 
-`make format` применяет Ruff ко всему Python-коду. `make check` проверяет lint и форматирование,
-компилируемость Python, shell script и LaunchAgent plist; type-check и тесты не запускаются.
+`make format` применяет Ruff ко всему Python-коду. `make test` запускает unit/integration smoke
+tests. `make check` проверяет lint, форматирование, компилируемость Python, тесты, shell script и
+LaunchAgent plist; type-check не запускается.
 `make queue-audit` сверяет SQLite checkpoints, наличие файлов и ffprobe metadata всех ожидающих
 MP4.
 
