@@ -7,7 +7,10 @@ PLATFORM_MEDIA_COLUMNS = {
     "facebook": "facebook_media_id",
     "threads": "threads_media_id",
     "youtube": "youtube_video_id",
+    "tiktok": "tiktok_publish_id",
 }
+NOT_REQUIRED_CHECKPOINT = "not-required-before-enable"
+PENDING_TIKTOK_PREFIX = "pending:"
 
 
 class QueueDB:
@@ -49,6 +52,9 @@ class QueueDB:
                     facebook_media_id TEXT,
                     threads_media_id TEXT,
                     youtube_video_id TEXT,
+                    tiktok_publish_id TEXT,
+                    tiktok_upload_url TEXT,
+                    tiktok_upload_offset INTEGER NOT NULL DEFAULT 0,
                     youtube_test_video_id TEXT,
                     error TEXT
                 );
@@ -80,6 +86,9 @@ class QueueDB:
                 "facebook_media_id": "TEXT",
                 "threads_media_id": "TEXT",
                 "youtube_video_id": "TEXT",
+                "tiktok_publish_id": "TEXT",
+                "tiktok_upload_url": "TEXT",
+                "tiktok_upload_offset": "INTEGER NOT NULL DEFAULT 0",
                 "youtube_test_video_id": "TEXT",
             }
             for column, declaration in migrations.items():
@@ -148,6 +157,71 @@ class QueueDB:
                 (key, str(value)),
             )
             connection.commit()
+        finally:
+            connection.close()
+
+    def sync_platform_enabled(self, platform, enabled):
+        column = PLATFORM_MEDIA_COLUMNS.get(str(platform))
+        if not column:
+            raise ValueError(f"Unsupported platform: {platform}")
+
+        setting_key = f"publisher_enabled:{platform}"
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE key = ?",
+                (setting_key,),
+            ).fetchone()
+            previously_enabled = bool(row and row["value"] == "1")
+            ignored = []
+            if enabled and not previously_enabled:
+                missing_checkpoint = f"({column} IS NULL OR {column} = '')"
+                if platform == "tiktok":
+                    missing_checkpoint = (
+                        f"({column} IS NULL OR {column} = '' "
+                        f"OR {column} LIKE '{PENDING_TIKTOK_PREFIX}%')"
+                    )
+                ignored = [
+                    item["id"]
+                    for item in connection.execute(
+                        f"""
+                        SELECT id FROM jobs
+                        WHERE status = 'published'
+                          AND {missing_checkpoint}
+                        """
+                    ).fetchall()
+                ]
+                if ignored:
+                    if platform == "tiktok":
+                        connection.execute(
+                            f"""
+                            UPDATE jobs
+                            SET {column} = ?,
+                                tiktok_upload_url = NULL,
+                                tiktok_upload_offset = 0
+                            WHERE status = 'published'
+                              AND {missing_checkpoint}
+                            """,
+                            (NOT_REQUIRED_CHECKPOINT,),
+                        )
+                    else:
+                        connection.execute(
+                            f"""
+                            UPDATE jobs SET {column} = ?
+                            WHERE status = 'published'
+                              AND {missing_checkpoint}
+                            """,
+                            (NOT_REQUIRED_CHECKPOINT,),
+                        )
+            connection.execute(
+                """
+                INSERT INTO settings(key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (setting_key, "1" if enabled else "0"),
+            )
+            connection.commit()
+            return ignored
         finally:
             connection.close()
 
@@ -314,6 +388,17 @@ class QueueDB:
             raise ValueError(f"Unsupported platform: {platform}")
         if media_id is None or str(media_id) == "":
             raise ValueError(f"Missing {platform} media id")
+        if platform == "tiktok":
+            return self._update(
+                """
+                UPDATE jobs
+                SET tiktok_publish_id = ?,
+                    tiktok_upload_url = NULL,
+                    tiktok_upload_offset = 0
+                WHERE id = ?
+                """,
+                (str(media_id), job_id),
+            )
         return self._update(
             f"UPDATE jobs SET {column} = ? WHERE id = ?",
             (str(media_id), job_id),
@@ -326,6 +411,58 @@ class QueueDB:
         return self._update(
             f"UPDATE jobs SET {column} = NULL WHERE id = ?",
             (job_id,),
+        )
+
+    def start_tiktok_upload(self, job_id, publish_id, upload_url):
+        publish_id = str(publish_id).strip()
+        upload_url = str(upload_url).strip()
+        if not publish_id or not upload_url:
+            raise ValueError("TikTok upload state requires publish_id and upload_url")
+        return self._update(
+            """
+            UPDATE jobs
+            SET tiktok_publish_id = ?,
+                tiktok_upload_url = ?,
+                tiktok_upload_offset = 0
+            WHERE id = ?
+            """,
+            (PENDING_TIKTOK_PREFIX + publish_id, upload_url, job_id),
+        )
+
+    def set_tiktok_upload_offset(self, job_id, publish_id, offset):
+        offset = int(offset)
+        if offset < 0:
+            raise ValueError("TikTok upload offset cannot be negative")
+        return self._update(
+            """
+            UPDATE jobs
+            SET tiktok_upload_offset = ?
+            WHERE id = ? AND tiktok_publish_id = ?
+            """,
+            (offset, job_id, PENDING_TIKTOK_PREFIX + str(publish_id)),
+        )
+
+    def clear_tiktok_transport(self, job_id, publish_id):
+        return self._update(
+            """
+            UPDATE jobs
+            SET tiktok_upload_url = NULL,
+                tiktok_upload_offset = 0
+            WHERE id = ? AND tiktok_publish_id = ?
+            """,
+            (job_id, PENDING_TIKTOK_PREFIX + str(publish_id)),
+        )
+
+    def reset_tiktok_upload(self, job_id, publish_id):
+        return self._update(
+            """
+            UPDATE jobs
+            SET tiktok_publish_id = NULL,
+                tiktok_upload_url = NULL,
+                tiktok_upload_offset = 0
+            WHERE id = ? AND tiktok_publish_id = ?
+            """,
+            (job_id, PENDING_TIKTOK_PREFIX + str(publish_id)),
         )
 
     def set_youtube_test_video_id(self, job_id, video_id):
@@ -524,7 +661,12 @@ class QueueDB:
             rows = connection.execute("SELECT * FROM jobs WHERE status = 'published'").fetchall()
             incomplete = {}
             for row in rows:
-                missing = [platform for platform, column in columns if not row[column]]
+                missing = [
+                    platform
+                    for platform, column in columns
+                    if not row[column]
+                    or (platform == "tiktok" and str(row[column]).startswith(PENDING_TIKTOK_PREFIX))
+                ]
                 if not missing:
                     continue
                 detail = "Missing platform checkpoints: " + ", ".join(missing)

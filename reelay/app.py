@@ -22,7 +22,10 @@ def build_application(settings=None):
     if rebased:
         LOGGER.warning("Rebased moved video paths: %s", rebased)
     tagger = AutoTagger(settings)
-    publishers = PublisherRegistry.from_settings(settings)
+    ignored = db.sync_platform_enabled("tiktok", settings.publish_tiktok)
+    if ignored:
+        LOGGER.info("TikTok was not required for previously completed jobs: %s", ignored)
+    publishers = PublisherRegistry.from_settings(settings, token_store=db)
     recovery = db.recover_interrupted_jobs()
     if any(recovery.values()):
         LOGGER.warning("Recovered interrupted jobs: %s", recovery)

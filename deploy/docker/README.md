@@ -21,6 +21,8 @@ REELAY_ENV_FILE=/etc/reelay/reelay.env docker compose up --detach --build
 
 The environment file must be readable by the user running Docker and should have mode `0600`.
 Compose passes its values to the container at runtime. The file is excluded from the build context.
+TikTok OAuth is completed before enabling `PUBLISH_TIKTOK`; the latest rotated TikTok refresh
+token is persisted in SQLite because the Compose environment itself is immutable after startup.
 
 Useful operations:
 
@@ -88,4 +90,6 @@ WAL are intentionally single-instance. Use a local/block-backed Docker volume, n
 
 Use at least 2 vCPU and 2 GiB RAM; 4 GiB RAM is preferable for 1080×1920 FFmpeg transcodes.
 Allocate 10–20 GiB to the data volume and leave at least 2 GiB free for the container's temporary
-Threads MP4. Outbound HTTPS/DNS access is required; no inbound firewall rule is needed.
+Threads MP4. Outbound HTTPS/DNS access is required, including `www.tiktok.com`,
+`open.tiktokapis.com` and the returned `open-upload.tiktokapis.com` upload URL; no inbound firewall
+rule is needed.

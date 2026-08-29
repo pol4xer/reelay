@@ -5,7 +5,7 @@ from collections import Counter
 from pathlib import Path
 
 from .config import Settings
-from .db import PLATFORM_MEDIA_COLUMNS, QueueDB
+from .db import PENDING_TIKTOK_PREFIX, PLATFORM_MEDIA_COLUMNS, QueueDB
 from .publishers import PublisherRegistry
 
 
@@ -13,7 +13,7 @@ def audit_queue(probe_media=False):
     settings = Settings()
     db = QueueDB(settings.db_path)
     db.init()
-    publishers = PublisherRegistry.from_settings(settings)
+    publishers = PublisherRegistry.from_settings(settings, token_store=db)
     required = [platform.value for platform in publishers]
     jobs = db.all_jobs()
     counts = Counter(job["status"] for job in jobs)
@@ -24,7 +24,13 @@ def audit_queue(probe_media=False):
         video_path = Path(job["video_path"]) if job.get("video_path") else None
         if job["status"] == "published":
             missing = [
-                platform for platform in required if not job.get(PLATFORM_MEDIA_COLUMNS[platform])
+                platform
+                for platform in required
+                if not job.get(PLATFORM_MEDIA_COLUMNS[platform])
+                or (
+                    platform == "tiktok"
+                    and str(job[PLATFORM_MEDIA_COLUMNS[platform]]).startswith(PENDING_TIKTOK_PREFIX)
+                )
             ]
             if missing:
                 issues.append(f"#{job_id}: published without {', '.join(missing)}")

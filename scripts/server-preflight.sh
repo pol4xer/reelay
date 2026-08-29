@@ -556,6 +556,9 @@ for host in \
     api.trycloudflare.com \
     oauth2.googleapis.com \
     www.googleapis.com \
+    www.tiktok.com \
+    open.tiktokapis.com \
+    open-upload.tiktokapis.com \
     region1.v2.argotunnel.com \
     region2.v2.argotunnel.com; do
     check_dns "${host}"
@@ -573,6 +576,9 @@ else
     check_https "Cloudflare Quick Tunnel API" "https://api.trycloudflare.com/"
     check_https "Google OAuth" "https://oauth2.googleapis.com/"
     check_https "YouTube API" "https://www.googleapis.com/youtube/v3/"
+    check_https "TikTok OAuth" "https://www.tiktok.com/"
+    check_https "TikTok Content API" "https://open.tiktokapis.com/"
+    check_https "TikTok Upload" "https://open-upload.tiktokapis.com/"
     check_https "Cloudflare" "https://www.cloudflare.com/cdn-cgi/trace"
 fi
 check_cloudflare_tunnel

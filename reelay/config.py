@@ -54,6 +54,7 @@ class Settings:
         self.publish_facebook = _bool("PUBLISH_FACEBOOK")
         self.publish_threads = _bool("PUBLISH_THREADS")
         self.publish_youtube = _bool("PUBLISH_YOUTUBE")
+        self.publish_tiktok = _bool("PUBLISH_TIKTOK")
 
         self.threads_api_version = os.getenv("THREADS_API_VERSION", "v1.0").strip()
         self.threads_app_id = os.getenv("THREADS_APP_ID", "").strip()
@@ -66,6 +67,15 @@ class Settings:
         self.youtube_refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
         self.youtube_channel_id = os.getenv("YOUTUBE_CHANNEL_ID", "").strip()
         self.youtube_privacy_status = os.getenv("YOUTUBE_PRIVACY_STATUS", "private").strip()
+
+        self.tiktok_client_key = os.getenv("TIKTOK_CLIENT_KEY", "").strip()
+        self.tiktok_client_secret = os.getenv("TIKTOK_CLIENT_SECRET", "").strip()
+        self.tiktok_refresh_token = os.getenv("TIKTOK_REFRESH_TOKEN", "").strip()
+        self.tiktok_open_id = os.getenv("TIKTOK_OPEN_ID", "").strip()
+        self.tiktok_redirect_uri = os.getenv(
+            "TIKTOK_REDIRECT_URI",
+            "http://127.0.0.1:*/callback/",
+        ).strip()
 
         required_by_flag = {
             "PUBLISH_FACEBOOK": (
@@ -86,6 +96,15 @@ class Settings:
                     "YOUTUBE_CLIENT_SECRET": self.youtube_client_secret,
                     "YOUTUBE_REFRESH_TOKEN": self.youtube_refresh_token,
                     "YOUTUBE_CHANNEL_ID": self.youtube_channel_id,
+                },
+            ),
+            "PUBLISH_TIKTOK": (
+                self.publish_tiktok,
+                {
+                    "TIKTOK_CLIENT_KEY": self.tiktok_client_key,
+                    "TIKTOK_CLIENT_SECRET": self.tiktok_client_secret,
+                    "TIKTOK_REFRESH_TOKEN": self.tiktok_refresh_token,
+                    "TIKTOK_OPEN_ID": self.tiktok_open_id,
                 },
             ),
         }

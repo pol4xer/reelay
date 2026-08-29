@@ -35,7 +35,11 @@ https://www.instagram.com/reel/SHORTCODE/
 
 При `ALLOW_PRIVATE_SOURCES=false` бот не читает cookies Chrome. Недоступные, закрытые и удалённые публикации удаляются из очереди с коротким сообщением `Пропущено: #ID`.
 
-Facebook Page, Threads и YouTube publishers уже подключены к общей очереди, но по умолчанию выключены. Каждый внешний media ID сохраняется сразу: если одна платформа упала, `/retry` продолжит с неё и не продублирует уже успешные публикации. Настройка credentials: [`docs/CROSSPOSTING_SETUP.md`](docs/CROSSPOSTING_SETUP.md).
+Facebook Page, Threads, YouTube и TikTok Inbox publishers подключены к общей очереди, но по
+умолчанию выключены. Каждый внешний ID сохраняется сразу: если одна платформа упала, `/retry`
+продолжит с неё и не продублирует уже успешную отправку. TikTok Upload-to-Inbox доставляет
+черновик и уведомление; caption нужно добавить и опубликовать вручную в TikTok. Настройка
+credentials: [`docs/CROSSPOSTING_SETUP.md`](docs/CROSSPOSTING_SETUP.md).
 
 Команды: `/help`, `/status`, `/queue`, `/file ID`, `/drop ID`, `/retry ID`, `/now`,
 `/times [HH:MM ...]`, `/posts [N]`, `/pause`, `/resume`.
@@ -47,7 +51,7 @@ Facebook Page, Threads и YouTube publishers уже подключены к об
 - `reelay/app.py` — сборка приложения и зависимостей;
 - `reelay/bot.py` — только Telegram UI и команды;
 - `reelay/downloader.py` — получение и нормализация Instagram MP4;
-- `reelay/publishers/` — отдельный uploader для Instagram, Facebook, Threads и YouTube;
+- `reelay/publishers/` — отдельный uploader для Instagram, Facebook, Threads, YouTube и TikTok;
 - `reelay/publishers/contract.py` — единый строгий `PublishRequest → PublishResult`;
 - `reelay/services/publishing.py` — очередь, порядок платформ и checkpoints;
 - `reelay/scheduler.py` — только расчёт времени и запуск publishing service;
@@ -80,8 +84,8 @@ make config-ui
 ```
 
 На macOS также можно дважды нажать `Reelay Settings.command` в папке проекта. Панель открывается
-на `http://127.0.0.1:8765`, разделяет Telegram, Instagram/Meta, Facebook, Threads, YouTube и
-расписание по отдельным вкладкам, показывает подсказки и официальные ссылки. Секреты не
+на `http://127.0.0.1:8765`, разделяет Telegram, Instagram/Meta, Facebook, Threads, YouTube,
+TikTok и расписание по отдельным вкладкам, показывает подсказки и официальные ссылки. Секреты не
 возвращаются из backend в браузер: UI видит только факт, что поле уже заполнено.
 
 Кнопка «Сохранить» атомарно обновляет локальный `.env`. «Сохранить и перезапустить» применяет
@@ -160,7 +164,8 @@ docker compose logs --follow --tail=100 reelay
 
 Compose монтирует `./data` в `/app/data`, автоматически перезапускает контейнер и не открывает
 входящие порты. Nginx и TLS для основного бота не требуются: Telegram использует long polling,
-публикации идут исходящими HTTPS-запросами, а Threads получает одноразовый HTTPS Quick Tunnel.
+публикации идут исходящими HTTPS-запросами, Threads получает одноразовый HTTPS Quick Tunnel, а
+TikTok Inbox принимает локальный MP4 через официальный upload URL.
 Подробности и перенос существующей очереди: [`deploy/docker/README.md`](deploy/docker/README.md).
 
 Один полный архив с кодом, `.env`, SQLite и всеми ожидающими MP4 создаётся командой:

@@ -37,6 +37,13 @@ const sections = {
     icon: "▶",
     link: "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
   },
+  tiktok: {
+    badge: "TIKTOK CONTENT POSTING API",
+    title: "TikTok Inbox",
+    description: "Загрузка MP4 в Inbox: откройте уведомление TikTok и завершите публикацию вручную.",
+    icon: "♪",
+    link: "https://developers.tiktok.com/docs/en/content-posting-api-get-started-upload-content",
+  },
   schedule_storage: {
     badge: "AUTOMATION",
     title: "Расписание & файлы",
@@ -51,6 +58,7 @@ const platformPresentation = {
   facebook: { name: "Facebook Page", logo: "f", section: "facebook" },
   threads: { name: "Threads", logo: "@", section: "threads" },
   youtube: { name: "YouTube Shorts", logo: "▶", section: "youtube" },
+  tiktok: { name: "TikTok Inbox", logo: "♪", section: "tiktok" },
 };
 
 const state = {

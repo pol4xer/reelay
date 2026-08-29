@@ -1,4 +1,4 @@
-# Reelay: подключение Facebook, Threads и YouTube
+# Reelay: подключение Facebook, Threads, YouTube и TikTok
 
 Все дополнительные направления выключены, пока их credentials не добавлены в локальный `.env` и не пройдена отдельная тестовая публикация.
 
@@ -123,6 +123,63 @@ video processing. Поэтому Reelay перед каждой Threads-публ
 
 Официальные ссылки: [Upload a video](https://developers.google.com/youtube/v3/guides/uploading_a_video), [`videos.insert`](https://developers.google.com/youtube/v3/docs/videos/insert), [OAuth for installed apps](https://developers.google.com/youtube/v3/guides/auth/installed-apps), [3-minute Shorts](https://support.google.com/youtube/answer/15424877), [API audit](https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits).
 
+## 4. TikTok Upload to Inbox
+
+Это отдельный [TikTok for Developers](https://developers.tiktok.com/apps/) portal, не TikTok API
+for Business. Reelay передаёт локальный MP4 через `FILE_UPLOAD`, ждёт
+`SEND_TO_USER_INBOX` и сохраняет `publish_id`. Видео ещё не опубликовано: откройте уведомление
+TikTok, добавьте caption из Telegram и вручную нажмите **Publish**.
+
+1. Войдите в [TikTok for Developers](https://developers.tiktok.com/signup/) обычным email.
+2. Откройте **Manage apps → Connect an app** и создайте приложение `Reelay`.
+3. Переключитесь в **Sandbox** и нажмите **Create Sandbox**.
+4. Добавьте продукты **Login Kit** и **Content Posting API**.
+5. Добавьте scopes:
+   - `user.info.basic`;
+   - `video.upload`.
+6. Добавьте платформу **Desktop**. В Login Kit зарегистрируйте redirect URI:
+
+   ```text
+   http://127.0.0.1:*/callback/
+   ```
+
+7. В **Sandbox settings → Target users** добавьте принадлежащий вам TikTok-аккаунт и завершите
+   вход этим аккаунтом.
+8. Сохраните Sandbox через **Apply changes**.
+9. Скопируйте Client key и Client secret в локальный `.env`, не включая publisher:
+
+   ```dotenv
+   TIKTOK_CLIENT_KEY=...
+   TIKTOK_CLIENT_SECRET=...
+   TIKTOK_REDIRECT_URI=http://127.0.0.1:*/callback/
+   PUBLISH_TIKTOK=false
+   ```
+
+10. Запустите OAuth bootstrap:
+
+    ```bash
+    make tiktok-oauth
+    ```
+
+11. В системном браузере войдите в нужный TikTok, разрешите scopes и подтвердите показанный
+    профиль. Reelay атомарно сохранит `TIKTOK_REFRESH_TOKEN` и `TIKTOK_OPEN_ID`, не печатая
+    секреты.
+12. Перенесите обновлённые TikTok credentials в серверную конфигурацию, установите
+    `PUBLISH_TIKTOK=true` и пересоздайте контейнер. Обновляйте refresh token через Reelay
+    Settings или одновременно в `.env` и SQLite: runtime хранит последнюю ротацию в SQLite.
+    Следующий элемент общей очереди будет также доставлен в TikTok Inbox.
+
+TikTok ограничивает пользователя пятью незавершёнными Inbox shares за 24 часа. При расписании
+три раза в день лимит соблюдается, если регулярно завершать публикации в приложении.
+
+`FILE_UPLOAD` технически не требует домена для передачи MP4. Однако Production review требует
+одобренное приложение/scope, внешний сайт, Terms и Privacy Policy; TikTok не одобряет
+private/personal/test-only приложения. Кроме того, для постоянно серверного источника TikTok
+рекомендует `PULL_FROM_URL` с проверенного HTTPS URL. Поэтому сначала проверяем Sandbox Inbox,
+а Production-доступ считаем отдельным внешним этапом, который TikTok может не одобрить.
+
+Официальные ссылки: [Upload to Inbox](https://developers.tiktok.com/docs/en/content-posting-api-get-started-upload-content), [Upload endpoint](https://developers.tiktok.com/docs/en/content-posting-api-reference-upload-video), [Desktop Login Kit](https://developers.tiktok.com/docs/en/login-kit-desktop), [OAuth tokens](https://developers.tiktok.com/docs/en/oauth-user-access-token-management), [Status](https://developers.tiktok.com/docs/en/content-posting-api-reference-get-video-status), [App review](https://developers.tiktok.com/docs/en/app-review-guidelines).
+
 ## Ответ одним сообщением
 
 Когда шаги выполнены, пришлите:
@@ -137,4 +194,9 @@ Threads User Access Token:
 
 YouTube OAuth: выполнен / не выполнен
 YouTube channel ID:
+
+TikTok Client key:
+TikTok Client secret:
+TikTok OAuth: выполнен / не выполнен
+TikTok Open ID:
 ```

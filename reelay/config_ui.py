@@ -122,6 +122,7 @@ def sync_runtime_settings(path, updates):
         "POSTS_PER_DAY": "posts_per_day",
         "POST_TIMES": "post_times",
         "TELEGRAM_OWNER_ID": "telegram_owner_id",
+        "TIKTOK_REFRESH_TOKEN": "tiktok_refresh_token",
     }
     changes = {mirrored[key]: value for key, value in updates.items() if key in mirrored}
     if not changes or not Path(path).is_file():
@@ -150,6 +151,7 @@ def runtime_setting_overrides(path):
         "posts_per_day": "POSTS_PER_DAY",
         "post_times": "POST_TIMES",
         "telegram_owner_id": "TELEGRAM_OWNER_ID",
+        "tiktok_refresh_token": "TIKTOK_REFRESH_TOKEN",
     }
     if not Path(path).is_file():
         return {}
@@ -275,6 +277,7 @@ def build_status(env_path=ENV_PATH, db_path=DB_PATH):
         "facebook": stored.get("PUBLISH_FACEBOOK", "false").lower() == "true",
         "threads": stored.get("PUBLISH_THREADS", "false").lower() == "true",
         "youtube": stored.get("PUBLISH_YOUTUBE", "false").lower() == "true",
+        "tiktok": stored.get("PUBLISH_TIKTOK", "false").lower() == "true",
     }
     config_status = {
         "envExists": env_path.is_file(),

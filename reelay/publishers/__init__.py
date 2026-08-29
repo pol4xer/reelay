@@ -3,6 +3,7 @@ from .facebook import FacebookPublisher
 from .instagram import InstagramPublisher
 from .registry import PublisherRegistry
 from .threads import ThreadsPublisher
+from .tiktok import TikTokPublisher
 from .youtube import YouTubePublisher
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "PublisherRegistry",
     "PublishRequest",
     "PublishResult",
+    "TikTokPublisher",
     "ThreadsPublisher",
     "YouTubePublisher",
 ]

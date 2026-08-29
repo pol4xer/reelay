@@ -5,6 +5,7 @@ from .contract import Platform, Publisher
 from .facebook import FacebookPublisher
 from .instagram import InstagramPublisher
 from .threads import ThreadsPublisher
+from .tiktok import TikTokPublisher
 from .youtube import YouTubePublisher
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ class PublisherRegistry(Mapping[Platform, Publisher]):
         self._publishers = registered
 
     @classmethod
-    def from_settings(cls, settings: "Settings") -> Self:
+    def from_settings(cls, settings: "Settings", token_store=None) -> Self:
         publishers: list[Publisher] = [InstagramPublisher(settings)]
         if settings.publish_facebook:
             publishers.append(FacebookPublisher(settings))
@@ -34,6 +35,8 @@ class PublisherRegistry(Mapping[Platform, Publisher]):
             publishers.append(ThreadsPublisher(settings))
         if settings.publish_youtube:
             publishers.append(YouTubePublisher(settings))
+        if settings.publish_tiktok:
+            publishers.append(TikTokPublisher(settings, token_store=token_store))
         return cls(publishers)
 
     def __getitem__(self, platform: Platform) -> Publisher:

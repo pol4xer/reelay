@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ..db import PLATFORM_MEDIA_COLUMNS
+from ..db import PENDING_TIKTOK_PREFIX, PLATFORM_MEDIA_COLUMNS
 from ..publishers import Platform, PublisherRegistry, PublishRequest
 
 LOGGER = logging.getLogger(__name__)
@@ -16,6 +16,7 @@ PLATFORM_LABELS = {
     Platform.FACEBOOK: "Facebook",
     Platform.THREADS: "Threads",
     Platform.YOUTUBE: "YouTube",
+    Platform.TIKTOK: "TikTok Inbox",
 }
 
 
@@ -76,7 +77,7 @@ class PublishingService:
         caption = compose_caption(job)
         for platform, publisher in self.publishers.items():
             column = PLATFORM_MEDIA_COLUMNS[platform.value]
-            if job.get(column):
+            if _checkpoint_complete(platform, job.get(column)):
                 self.db.record_publish_attempt(
                     job_id,
                     "checkpoint_skipped",
@@ -97,6 +98,7 @@ class PublishingService:
                         video_path=video_path,
                         caption=caption,
                         title=title,
+                        job_id=job_id,
                     )
                 )
                 if result.platform is not platform:
@@ -113,7 +115,7 @@ class PublishingService:
                 job[column] = result.media_id
                 self.db.record_publish_attempt(
                     job_id,
-                    "published",
+                    "inbox_delivered" if platform is Platform.TIKTOK else "published",
                     platform=platform.value,
                     detail=result.media_id,
                 )
@@ -165,7 +167,10 @@ class PublishingService:
         return [
             platform
             for platform in self.publishers
-            if not job.get(PLATFORM_MEDIA_COLUMNS[platform.value])
+            if not _checkpoint_complete(
+                platform,
+                job.get(PLATFORM_MEDIA_COLUMNS[platform.value]),
+            )
         ]
 
     def _skip(self, reason, message, job_id=None):
@@ -209,12 +214,29 @@ def compose_caption(job):
     return "\n\n".join(value for value in (caption, tag_line) if value)
 
 
+def _checkpoint_complete(platform, value):
+    if not value:
+        return False
+    return not (platform is Platform.TIKTOK and str(value).startswith(PENDING_TIKTOK_PREFIX))
+
+
 def success_message(job, publishers):
-    lines = [f"Опубликовано #{job['id']}:"]
+    lines = [f"Готово #{job['id']}:"]
     for platform in publishers:
         media_id = job.get(PLATFORM_MEDIA_COLUMNS[platform.value])
-        if media_id:
+        if media_id and not str(media_id).startswith("not-required-"):
             lines.append(f"{PLATFORM_LABELS[platform]}: {media_id}")
+    tiktok_id = job.get(PLATFORM_MEDIA_COLUMNS[Platform.TIKTOK.value])
+    if Platform.TIKTOK in publishers and _checkpoint_complete(Platform.TIKTOK, tiktok_id):
+        caption = compose_caption(job)
+        lines.extend(
+            [
+                "",
+                "TikTok: откройте уведомление Inbox, добавьте caption и нажмите Publish.",
+            ]
+        )
+        if caption:
+            lines.extend(["Caption для копирования:", caption[:2500]])
     return "\n".join(lines)
 
 

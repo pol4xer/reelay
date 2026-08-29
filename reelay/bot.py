@@ -31,6 +31,7 @@ PUBLISH_CHECKPOINT_COLUMNS = (
     "facebook_media_id",
     "threads_media_id",
     "youtube_video_id",
+    "tiktok_publish_id",
 )
 BOT_COMMANDS = [
     BotCommand("start", "Подключить или проверить бота"),
@@ -671,9 +672,14 @@ def _destination_ids(job):
         ("FB", "facebook_media_id"),
         ("TH", "threads_media_id"),
         ("YT", "youtube_video_id"),
+        ("TT-Inbox", "tiktok_publish_id"),
         ("YT-test", "youtube_test_video_id"),
     )
-    return " · ".join(f"{label}:{job[column]}" for label, column in fields if job.get(column))
+    return " · ".join(
+        f"{label}:{job[column]}"
+        for label, column in fields
+        if job.get(column) and not str(job[column]).startswith("not-required-")
+    )
 
 
 def _queued_message(job_id, tags):
@@ -722,6 +728,7 @@ def _help_message(times):
         "/retry ID|SHORTCODE — повторить failed\n"
         "/pause — приостановить публикации\n"
         "/resume — возобновить публикации\n\n"
+        "TikTok Inbox требует открыть уведомление, добавить caption и вручную нажать Publish.\n\n"
         f"Текущее расписание: {len(times)} в день — {', '.join(times)}"
     )
 

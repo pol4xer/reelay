@@ -9,6 +9,7 @@ class Platform(StrEnum):
     FACEBOOK = "facebook"
     THREADS = "threads"
     YOUTUBE = "youtube"
+    TIKTOK = "tiktok"
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +17,7 @@ class PublishRequest:
     video_path: Path
     caption: str = ""
     title: str = ""
+    job_id: int | None = None
 
     def __post_init__(self):
         if not isinstance(self.video_path, Path):
@@ -24,6 +26,10 @@ class PublishRequest:
             raise TypeError("caption must be a string")
         if not isinstance(self.title, str):
             raise TypeError("title must be a string")
+        if self.job_id is not None and (
+            isinstance(self.job_id, bool) or not isinstance(self.job_id, int) or self.job_id <= 0
+        ):
+            raise TypeError("job_id must be a positive integer or None")
 
         video_path = Path(self.video_path).expanduser().resolve()
         if not video_path.is_file():

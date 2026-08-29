@@ -1,5 +1,6 @@
 import re
 from copy import deepcopy
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .scheduler import parse_post_times
@@ -297,6 +298,72 @@ CONFIG_SCHEMA = (
         link="https://support.google.com/youtube/contact/yt_api_form",
     ),
     _field(
+        "PUBLISH_TIKTOK",
+        "tiktok",
+        "Send to TikTok Inbox",
+        field_type="toggle",
+        required=True,
+        help_text=(
+            "Загружать MP4 в TikTok Inbox. После уведомления нужно вручную "
+            "добавить caption и нажать Publish."
+        ),
+        default="false",
+        link="https://developers.tiktok.com/docs/en/content-posting-api-get-started-upload-content",
+    ),
+    _field(
+        "TIKTOK_CLIENT_KEY",
+        "tiktok",
+        "Client key",
+        help_text="Client key приложения TikTok for Developers.",
+        placeholder="awxxxxxxxxxxxxxxxx",
+        depends_on="PUBLISH_TIKTOK",
+        link="https://developers.tiktok.com/apps/",
+    ),
+    _field(
+        "TIKTOK_CLIENT_SECRET",
+        "tiktok",
+        "Client secret",
+        field_type="password",
+        secret=True,
+        help_text="Client secret приложения. Пустое поле сохраняет текущее значение.",
+        placeholder="••••••••••••••••",
+        depends_on="PUBLISH_TIKTOK",
+        link="https://developers.tiktok.com/apps/",
+    ),
+    _field(
+        "TIKTOK_REFRESH_TOKEN",
+        "tiktok",
+        "OAuth refresh token",
+        field_type="password",
+        secret=True,
+        help_text="Refresh token после запуска TikTok OAuth bootstrap.",
+        placeholder="rft.…",
+        depends_on="PUBLISH_TIKTOK",
+        link="https://developers.tiktok.com/docs/en/oauth-user-access-token-management",
+    ),
+    _field(
+        "TIKTOK_OPEN_ID",
+        "tiktok",
+        "Authorized account Open ID",
+        help_text="Open ID TikTok-профиля, подтверждённого во время OAuth.",
+        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        depends_on="PUBLISH_TIKTOK",
+        link="https://developers.tiktok.com/docs/en/login-kit-desktop",
+    ),
+    _field(
+        "TIKTOK_REDIRECT_URI",
+        "tiktok",
+        "Desktop redirect URI",
+        required=True,
+        help_text=(
+            "Добавьте этот URI в Login Kit Desktop. Wildcard-порт позволяет "
+            "OAuth bootstrap выбрать свободный локальный порт."
+        ),
+        placeholder="http://127.0.0.1:*/callback/",
+        default="http://127.0.0.1:*/callback/",
+        link="https://developers.tiktok.com/docs/en/login-kit-desktop",
+    ),
+    _field(
         "TIMEZONE",
         "schedule_storage",
         "Timezone",
@@ -536,6 +603,12 @@ def validate_values(values):
             "YOUTUBE_REFRESH_TOKEN",
             "YOUTUBE_CHANNEL_ID",
         ),
+        "PUBLISH_TIKTOK": (
+            "TIKTOK_CLIENT_KEY",
+            "TIKTOK_CLIENT_SECRET",
+            "TIKTOK_REFRESH_TOKEN",
+            "TIKTOK_OPEN_ID",
+        ),
     }
     for flag, keys in conditional.items():
         if values[flag] == "true":
@@ -580,6 +653,32 @@ def validate_values(values):
     for key in ("META_API_VERSION", "THREADS_API_VERSION"):
         if values[key] and not API_VERSION.fullmatch(values[key]):
             errors[key] = "Используйте формат версии вроде v26.0."
+
+    redirect_uri = values["TIKTOK_REDIRECT_URI"]
+    if redirect_uri:
+        parseable = redirect_uri.replace(":*", ":1", 1)
+        try:
+            parsed_redirect = urlsplit(parseable)
+            redirect_port = parsed_redirect.port
+        except ValueError:
+            parsed_redirect = None
+            redirect_port = None
+        if (
+            parsed_redirect is None
+            or parsed_redirect.scheme != "http"
+            or parsed_redirect.hostname not in {"127.0.0.1", "localhost"}
+            or parsed_redirect.username is not None
+            or parsed_redirect.password is not None
+            or redirect_port is None
+            or parsed_redirect.query
+            or parsed_redirect.fragment
+            or not parsed_redirect.path.startswith("/")
+            or redirect_uri.count("*") > 1
+            or ("*" in redirect_uri and ":*" not in redirect_uri)
+        ):
+            errors["TIKTOK_REDIRECT_URI"] = (
+                "Используйте loopback URI вроде http://127.0.0.1:*/callback/."
+            )
 
     for key in ("TELEGRAM_OWNER_USERNAME", "INSTAGRAM_USERNAME"):
         if values[key] and not USERNAME.fullmatch(values[key]):
