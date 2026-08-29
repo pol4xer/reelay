@@ -238,11 +238,17 @@ async def publish_next(context):
     if report.notify_owner:
         settings = context.application.bot_data["settings"]
         db = context.application.bot_data["db"]
-        await _notify_owner(context, settings, db, report.message)
+        await _notify_owner(
+            context,
+            settings,
+            db,
+            (report.message, *report.followup_messages),
+        )
     return report
 
 
-async def _notify_owner(context, settings, db, message):
+async def _notify_owner(context, settings, db, messages):
     owner_id = db.get_setting("telegram_owner_id", settings.telegram_owner_id)
     if owner_id:
-        await context.bot.send_message(chat_id=int(owner_id), text=message)
+        for message in messages:
+            await context.bot.send_message(chat_id=int(owner_id), text=message)

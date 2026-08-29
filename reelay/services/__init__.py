@@ -1,3 +1,3 @@
-from .publishing import PublicationReport, PublishingService, compose_caption
+from .publishing import PublicationReport, PublishingService, compose_caption, compose_hashtags
 
-__all__ = ["PublicationReport", "PublishingService", "compose_caption"]
+__all__ = ["PublicationReport", "PublishingService", "compose_caption", "compose_hashtags"]

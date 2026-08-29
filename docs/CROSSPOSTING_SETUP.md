@@ -127,8 +127,9 @@ video processing. Поэтому Reelay перед каждой Threads-публ
 
 Это отдельный [TikTok for Developers](https://developers.tiktok.com/apps/) portal, не TikTok API
 for Business. Reelay передаёт локальный MP4 через `FILE_UPLOAD`, ждёт
-`SEND_TO_USER_INBOX` и сохраняет `publish_id`. Видео ещё не опубликовано: откройте уведомление
-TikTok, добавьте caption из Telegram и вручную нажмите **Publish**.
+`SEND_TO_USER_INBOX` и сохраняет `publish_id`. Видео ещё не опубликовано: после основного отчёта
+Reelay присылает отдельное Telegram-сообщение только с готовыми TikTok-хэштегами. Скопируйте его
+целиком, вставьте в публикацию из уведомления TikTok и вручную нажмите **Publish**.
 
 Reelay намеренно отправляет в TikTok чистый исходный MP4. Автоматический знак Reelay применяется
 только к Instagram, Facebook, Threads и YouTube: TikTok Content Sharing Guidelines запрещают

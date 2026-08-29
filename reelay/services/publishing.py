@@ -21,7 +21,6 @@ PLATFORM_LABELS = {
 BRAND_HASHTAG = "#Reelay"
 TIKTOK_HASHTAG_LIMIT = 5
 HASHTAG_PATTERN = re.compile(r"(?<!\w)#[\w]+", re.UNICODE)
-TIKTOK_COPY_CAPTION_LIMIT = 2500
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +30,7 @@ class PublicationReport:
     job_id: int | None = None
     platform: Platform | None = None
     notify_owner: bool = False
+    followup_messages: tuple[str, ...] = ()
 
 
 class PublishingService:
@@ -164,6 +164,7 @@ class PublishingService:
 
         completed = self.db.get_job(job_id) or job
         message = success_message(completed, self.publishers)
+        followup_messages = success_followup_messages(completed, self.publishers)
         self.db.record_publish_attempt(job_id, "completed")
         LOGGER.info("Publication completed for job #%s", job_id)
         return PublicationReport(
@@ -171,6 +172,7 @@ class PublishingService:
             job_id=job_id,
             message=message,
             notify_owner=True,
+            followup_messages=followup_messages,
         )
 
     def missing_platforms(self, job) -> list[Platform]:
@@ -217,8 +219,20 @@ class PublishingService:
 
 def compose_caption(job, platform=None):
     caption = (job.get("caption") or "").strip()
+    hashtag_line = compose_hashtags(job, platform)
+
+    prose = HASHTAG_PATTERN.sub("", caption)
+    prose = re.sub(r"[ \t]{2,}", " ", prose)
+    prose = re.sub(r"(?m)^[ \t]+|[ \t]+$", "", prose)
+    prose = re.sub(r"[ \t]+([,.;:!?])", r"\1", prose)
+    prose = re.sub(r"\n{3,}", "\n\n", prose).strip()
+    return "\n\n".join(value for value in (prose, hashtag_line) if value)
+
+
+def compose_hashtags(job, platform=None):
     hashtags = [BRAND_HASHTAG]
     seen = {BRAND_HASHTAG.casefold()}
+    caption = job.get("caption") or ""
     for hashtag in HASHTAG_PATTERN.findall(caption) + HASHTAG_PATTERN.findall(
         job.get("tags") or ""
     ):
@@ -229,13 +243,7 @@ def compose_caption(job, platform=None):
 
     if platform == Platform.TIKTOK:
         hashtags = hashtags[:TIKTOK_HASHTAG_LIMIT]
-
-    prose = HASHTAG_PATTERN.sub("", caption)
-    prose = re.sub(r"[ \t]{2,}", " ", prose)
-    prose = re.sub(r"(?m)^[ \t]+|[ \t]+$", "", prose)
-    prose = re.sub(r"[ \t]+([,.;:!?])", r"\1", prose)
-    prose = re.sub(r"\n{3,}", "\n\n", prose).strip()
-    return "\n\n".join(value for value in (prose, " ".join(hashtags)) if value)
+    return " ".join(hashtags)
 
 
 def _checkpoint_complete(platform, value):
@@ -250,39 +258,30 @@ def success_message(job, publishers):
         media_id = job.get(PLATFORM_MEDIA_COLUMNS[platform.value])
         if media_id and not str(media_id).startswith("not-required-"):
             lines.append(f"{PLATFORM_LABELS[platform]}: {media_id}")
-    tiktok_id = job.get(PLATFORM_MEDIA_COLUMNS[Platform.TIKTOK.value])
-    if (
-        Platform.TIKTOK in publishers
-        and _checkpoint_complete(Platform.TIKTOK, tiktok_id)
-        and not str(tiktok_id).startswith("not-required-")
-    ):
-        caption = _limit_caption_preserving_hashtags(
-            compose_caption(job, Platform.TIKTOK),
-            TIKTOK_COPY_CAPTION_LIMIT,
-        )
+    if _has_completed_tiktok_delivery(job, publishers):
         lines.extend(
             [
                 "",
-                "TikTok: откройте уведомление Inbox, добавьте caption и нажмите Publish.",
+                "TikTok: откройте уведомление Inbox, вставьте хэштеги "
+                "из следующего сообщения и нажмите Publish.",
             ]
         )
-        if caption:
-            lines.extend(["Caption для копирования:", caption[:2500]])
     return "\n".join(lines)
 
 
-def _limit_caption_preserving_hashtags(caption, limit):
-    if len(caption) <= limit:
-        return caption
+def success_followup_messages(job, publishers):
+    if not _has_completed_tiktok_delivery(job, publishers):
+        return ()
+    return (compose_hashtags(job, Platform.TIKTOK),)
 
-    prose, separator, tag_line = caption.rpartition("\n\n")
-    if not separator:
-        return caption[:limit]
-    if len(tag_line) >= limit:
-        return tag_line[:limit]
 
-    prose = prose[: limit - len(tag_line) - len(separator)].rstrip()
-    return f"{prose}{separator if prose else ''}{tag_line}"
+def _has_completed_tiktok_delivery(job, publishers):
+    tiktok_id = job.get(PLATFORM_MEDIA_COLUMNS[Platform.TIKTOK.value])
+    return (
+        Platform.TIKTOK in publishers
+        and _checkpoint_complete(Platform.TIKTOK, tiktok_id)
+        and not str(tiktok_id).startswith("not-required-")
+    )
 
 
 def _delete_job_video_directory(video_root, video_path):

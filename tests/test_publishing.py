@@ -1,7 +1,12 @@
 import unittest
 
 from reelay.publishers import Platform
-from reelay.services.publishing import compose_caption, success_message
+from reelay.services.publishing import (
+    compose_caption,
+    compose_hashtags,
+    success_followup_messages,
+    success_message,
+)
 
 
 class CaptionCompositionTests(unittest.TestCase):
@@ -51,7 +56,7 @@ class CaptionCompositionTests(unittest.TestCase):
             "Просто текст ✨\n\n#Reelay",
         )
 
-    def test_tiktok_success_message_contains_limited_manual_caption(self):
+    def test_tiktok_success_separates_limited_hashtag_only_followup(self):
         job = {
             "id": 7,
             "caption": "Текст #one #two #three #four #five",
@@ -60,25 +65,21 @@ class CaptionCompositionTests(unittest.TestCase):
         }
 
         message = success_message(job, [Platform.TIKTOK])
+        followups = success_followup_messages(job, [Platform.TIKTOK])
 
-        self.assertIn("Caption для копирования:\n", message)
-        self.assertIn("Текст\n\n#Reelay #one #two #three #four", message)
+        self.assertNotIn("Текст", message)
+        self.assertNotIn("#Reelay", message)
         self.assertNotIn("#five", message)
         self.assertNotIn("#six", message)
+        self.assertEqual(followups, ("#Reelay #one #two #three #four",))
 
-    def test_long_tiktok_copy_caption_keeps_hashtag_line(self):
-        job = {
-            "id": 8,
-            "caption": f"{'Очень длинный текст 🎬 ' * 200}#one #two",
-            "tags": "#three #four #five",
-            "tiktok_publish_id": "publish-id",
-        }
+    def test_tiktok_hashtag_line_contains_no_caption_or_label(self):
+        job = {"caption": "Текст 🎬 #one", "tags": "#two"}
 
-        message = success_message(job, [Platform.TIKTOK])
-        manual_caption = message.split("Caption для копирования:\n", 1)[1]
-
-        self.assertLessEqual(len(manual_caption), 2500)
-        self.assertTrue(manual_caption.endswith("#Reelay #one #two #three #four"))
+        self.assertEqual(
+            compose_hashtags(job, Platform.TIKTOK),
+            "#Reelay #one #two",
+        )
 
     def test_not_required_tiktok_checkpoint_has_no_inbox_instructions(self):
         job = {
@@ -89,9 +90,40 @@ class CaptionCompositionTests(unittest.TestCase):
         }
 
         message = success_message(job, [Platform.TIKTOK])
+        followups = success_followup_messages(job, [Platform.TIKTOK])
 
         self.assertEqual(message, "Готово #9:")
-        self.assertNotIn("Caption для копирования", message)
+        self.assertEqual(followups, ())
+
+    def test_disabled_tiktok_has_no_followup_even_with_checkpoint(self):
+        job = {
+            "id": 10,
+            "caption": "Текст #one",
+            "tags": "#two",
+            "tiktok_publish_id": "publish-id",
+        }
+
+        self.assertEqual(success_followup_messages(job, [Platform.INSTAGRAM]), ())
+
+    def test_missing_tiktok_checkpoint_has_no_followup(self):
+        job = {
+            "id": 11,
+            "caption": "Текст #one",
+            "tags": "#two",
+            "tiktok_publish_id": None,
+        }
+
+        self.assertEqual(success_followup_messages(job, [Platform.TIKTOK]), ())
+
+    def test_pending_tiktok_checkpoint_has_no_followup(self):
+        job = {
+            "id": 12,
+            "caption": "Текст #one",
+            "tags": "#two",
+            "tiktok_publish_id": "pending:upload-id",
+        }
+
+        self.assertEqual(success_followup_messages(job, [Platform.TIKTOK]), ())
 
 
 if __name__ == "__main__":
