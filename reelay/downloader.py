@@ -5,6 +5,11 @@ import sys
 from fractions import Fraction
 from pathlib import Path
 
+YTDLP_TIMEOUT_SECONDS = 180
+FFPROBE_TIMEOUT_SECONDS = 30
+FFMPEG_TIMEOUT_SECONDS = 900
+PROCESS_TERMINATE_GRACE_SECONDS = 5
+
 
 class InstagramDownloader:
     def __init__(self, settings):
@@ -68,12 +73,24 @@ class InstagramDownloader:
             "after_move:filepath",
             "--quiet",
             "--no-progress",
+            "--socket-timeout",
+            "20",
+            "--retries",
+            "3",
+            "--fragment-retries",
+            "3",
+            "--extractor-retries",
+            "3",
         ]
         if browser:
             command.extend(["--cookies-from-browser", browser])
         command.append(url)
 
-        stdout = await self._run(command)
+        stdout = await self._run(
+            command,
+            timeout=YTDLP_TIMEOUT_SECONDS,
+            label="yt-dlp",
+        )
         source = self._output_path(job_dir, stdout)
         probe = await self._probe(source)
         video = next(
@@ -175,7 +192,11 @@ class InstagramDownloader:
             ffmpeg.extend(["-c:a", "aac", "-ar", "48000", "-b:a", "128k"])
 
         ffmpeg.extend(["-movflags", "+faststart", str(target)])
-        await self._run(ffmpeg)
+        await self._run(
+            ffmpeg,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
+            label="ffmpeg",
+        )
         if not target.is_file():
             raise RuntimeError("ffmpeg finished without creating normalized.mp4")
         source.unlink()
@@ -194,7 +215,9 @@ class InstagramDownloader:
                 "-of",
                 "json",
                 str(path),
-            ]
+            ],
+            timeout=FFPROBE_TIMEOUT_SECONDS,
+            label="ffprobe",
         )
         try:
             return json.loads(output).get("streams", [])
@@ -237,7 +260,7 @@ class InstagramDownloader:
             raise RuntimeError("yt-dlp finished without creating a video file")
         return max(candidates, key=lambda path: path.stat().st_mtime)
 
-    async def _run(self, command):
+    async def _run(self, command, *, timeout, label):
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -245,13 +268,66 @@ class InstagramDownloader:
                 stderr=asyncio.subprocess.PIPE,
             )
         except OSError as error:
-            raise RuntimeError(str(error)) from error
+            raise RuntimeError(f"{label} could not start: {error}") from error
 
-        stdout, stderr = await process.communicate()
+        communication = asyncio.create_task(process.communicate())
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                asyncio.shield(communication),
+                timeout=timeout,
+            )
+        except TimeoutError as error:
+            await self._stop_process(process)
+            result = await asyncio.gather(communication, return_exceptions=True)
+            detail = self._communication_error_detail(result)
+            message = ""
+            if detail:
+                message += f"{detail}\n"
+            message += f"{label} timed out after {timeout} seconds"
+            raise RuntimeError(message) from error
+        except asyncio.CancelledError:
+            await self._stop_process(process)
+            await asyncio.gather(communication, return_exceptions=True)
+            raise
+
         stdout = stdout.decode(errors="replace")
-        stderr = stderr.decode(errors="replace")
+        stderr = self._stderr_detail(stderr)
         if process.returncode:
-            lines = [line for line in stderr.splitlines() if line.strip()]
-            message = "\n".join(lines[-12:]) or f"Command failed: {process.returncode}"
+            message = stderr or f"{label} failed without error output"
+            message += f"\n{label} failed with exit code {process.returncode}"
             raise RuntimeError(message)
         return stdout
+
+    @staticmethod
+    async def _stop_process(process):
+        if process.returncode is not None:
+            return
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            await asyncio.wait_for(
+                process.wait(),
+                timeout=PROCESS_TERMINATE_GRACE_SECONDS,
+            )
+        except TimeoutError:
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+            await process.wait()
+
+    @classmethod
+    def _communication_error_detail(cls, result):
+        if not result or not isinstance(result[0], tuple):
+            return ""
+        _, stderr = result[0]
+        return cls._stderr_detail(stderr)
+
+    @staticmethod
+    def _stderr_detail(stderr):
+        text = stderr.decode(errors="replace")
+        lines = [line for line in text.splitlines() if line.strip()]
+        return "\n".join(lines[-12:])

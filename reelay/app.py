@@ -2,7 +2,7 @@ import logging
 
 from telegram.ext import Application
 
-from .bot import post_init, register_handlers
+from .bot import post_init, post_stop, register_handlers
 from .config import Settings
 from .db import QueueDB
 from .downloader import InstagramDownloader
@@ -36,11 +36,18 @@ def build_application(settings=None):
         tagger=tagger,
     )
 
-    application = Application.builder().token(settings.telegram_token).post_init(post_init).build()
+    application = (
+        Application.builder()
+        .token(settings.telegram_token)
+        .post_init(post_init)
+        .post_stop(post_stop)
+        .build()
+    )
     application.bot_data.update(
         {
             "settings": settings,
             "db": db,
+            "download_tasks": set(),
             "downloader": InstagramDownloader(settings),
             "publishers": publishers,
             "publishing_service": publishing_service,

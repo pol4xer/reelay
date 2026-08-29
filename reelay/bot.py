@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import shutil
@@ -22,6 +23,13 @@ SHORTCODE = re.compile(r"^[A-Za-z0-9_-]+$")
 LOGGER = logging.getLogger(__name__)
 PATH_KINDS = {"p", "reel", "reels", "tv"}
 MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024
+DOWNLOAD_TASKS_KEY = "download_tasks"
+PUBLISH_CHECKPOINT_COLUMNS = (
+    "instagram_media_id",
+    "facebook_media_id",
+    "threads_media_id",
+    "youtube_video_id",
+)
 BOT_COMMANDS = [
     BotCommand("start", "Подключить или проверить бота"),
     BotCommand("help", "Показать инструкцию и команды"),
@@ -44,6 +52,35 @@ async def post_init(application):
         await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     except TelegramError as error:
         LOGGER.warning("Telegram menu setup failed: %s", error)
+
+
+async def post_stop(application):
+    tasks = application.bot_data.get(DOWNLOAD_TASKS_KEY, set())
+    if not tasks:
+        return
+
+    pending = tuple(tasks)
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+    tasks.clear()
+
+
+def _schedule_download(application, coroutine, name):
+    tasks = application.bot_data.setdefault(DOWNLOAD_TASKS_KEY, set())
+    task = asyncio.create_task(coroutine, name=name)
+    tasks.add(task)
+    task.add_done_callback(lambda completed: _download_finished(tasks, completed))
+
+
+def _download_finished(tasks, task):
+    tasks.discard(task)
+    if task.cancelled():
+        return
+    try:
+        task.result()
+    except Exception:
+        LOGGER.exception("Background download task failed")
 
 
 def _owner_id(context):
@@ -107,6 +144,30 @@ def _instagram_url(line):
     return f"https://www.instagram.com/{kind}/{shortcode}/", shortcode
 
 
+def _instagram_blocks(text):
+    lines = [line for line in text.splitlines() if line.strip()]
+    parsed_lines = [_instagram_url(line) for line in lines]
+    if not any(parsed_lines):
+        return []
+    if not parsed_lines[0]:
+        return None
+
+    blocks = []
+    source_url = shortcode = None
+    caption_lines = []
+    for line, parsed in zip(lines, parsed_lines, strict=True):
+        if parsed:
+            if source_url is not None:
+                blocks.append((source_url, shortcode, "\n".join(caption_lines)))
+            source_url, shortcode = parsed
+            caption_lines = []
+            continue
+        caption_lines.append(line)
+
+    blocks.append((source_url, shortcode, "\n".join(caption_lines)))
+    return blocks
+
+
 async def start(update, context):
     if update.effective_chat.type != "private":
         return
@@ -145,9 +206,13 @@ async def add_link(update, context):
         return
 
     text = update.effective_message.text
-    first_line, separator, caption = text.partition("\n")
-    parsed = _instagram_url(first_line)
-    if not parsed:
+    blocks = _instagram_blocks(text)
+    if blocks is None:
+        await update.effective_message.reply_text(
+            "Первая непустая строка должна быть одной ссылкой Instagram."
+        )
+        return
+    if not blocks:
         attached = await _attach_pending_caption(context, text)
         if attached:
             job_id, tags = attached
@@ -158,9 +223,11 @@ async def add_link(update, context):
         )
         return
 
-    source_url, shortcode = parsed
-    if not separator:
-        caption = ""
+    for source_url, shortcode, caption in blocks:
+        await _add_instagram_job(update, context, source_url, shortcode, caption)
+
+
+async def _add_instagram_job(update, context, source_url, shortcode, caption):
     db = context.application.bot_data["db"]
 
     existing = db.get_job_by_shortcode(shortcode)
@@ -170,12 +237,7 @@ async def add_link(update, context):
             tags = ""
             video_path = Path(existing["video_path"]) if existing.get("video_path") else None
             if video_path and video_path.is_file():
-                try:
-                    tagger = context.application.bot_data["tagger"]
-                    tags = await tagger.generate(video_path, caption)
-                    db.set_tags(existing["id"], tags)
-                except Exception:
-                    tags = ""
+                tags = await _regenerate_tags(context, existing["id"], video_path, caption)
             await update.effective_message.reply_text(
                 _caption_updated_message(existing["id"], tags)
             )
@@ -206,18 +268,62 @@ async def add_link(update, context):
         db.set_setting("pending_caption_job_id", job_id)
 
     await update.effective_message.reply_text(f"Скачиваю #{job_id}…")
+    _schedule_download(
+        context.application,
+        _download_and_tag(update, context, job_id, source_url),
+        f"download-instagram-{job_id}",
+    )
+
+
+async def _download_and_tag(
+    update,
+    context,
+    job_id,
+    source_url,
+    *,
+    preserve_checkpoints=False,
+):
+    db = context.application.bot_data["db"]
     downloader = context.application.bot_data["downloader"]
     tagger = context.application.bot_data["tagger"]
     try:
         path = await downloader.download(job_id, source_url)
+        job = db.get_job(job_id)
+        if not job:
+            return
+        caption = job.get("caption") or ""
         tags = await tagger.generate(path, caption)
-        db.set_downloaded(job_id, path, tags)
+        latest = db.get_job(job_id)
+        if not latest:
+            return
+        latest_caption = latest.get("caption") or ""
+        if latest_caption != caption:
+            tags = await tagger.generate(path, latest_caption)
+        if not db.set_downloaded(job_id, path, tags):
+            return
         await update.effective_message.reply_text(_queued_message(job_id, tags))
     except Exception:
-        db.delete_job(job_id)
         settings = context.application.bot_data["settings"]
         shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
+        if preserve_checkpoints:
+            db.set_failed(job_id, "Source download failed; checkpoints preserved")
+        else:
+            db.delete_job(job_id)
         await update.effective_message.reply_text(_skipped_message(job_id, source_url))
+
+
+async def _regenerate_tags(context, job_id, video_path, caption):
+    try:
+        tagger = context.application.bot_data["tagger"]
+        tags = await tagger.generate(video_path, caption)
+        db = context.application.bot_data["db"]
+        job = db.get_job(job_id)
+        if job and (job.get("caption") or "") == caption:
+            db.set_tags(job_id, tags)
+            return tags
+    except Exception as error:
+        LOGGER.warning("Could not regenerate tags for job #%s: %s", job_id, error)
+    return ""
 
 
 async def queue(update, context):
@@ -283,8 +389,9 @@ async def drop(update, context):
 
     db = context.application.bot_data["db"]
     job_id = job["id"]
-    if job["status"] == "publishing":
-        await update.effective_message.reply_text("Сейчас публикуется.")
+    if job["status"] in {"downloading", "publishing"}:
+        action = "скачивается" if job["status"] == "downloading" else "публикуется"
+        await update.effective_message.reply_text(f"Сейчас {action}.")
         return
 
     db.delete_job(job_id)
@@ -313,31 +420,18 @@ async def retry(update, context):
         return
 
     db.mark_downloading(job_id)
-    downloader = context.application.bot_data["downloader"]
-    tagger = context.application.bot_data["tagger"]
     await update.effective_message.reply_text(f"Скачиваю #{job_id} заново…")
-    try:
-        path = await downloader.download(job_id, job["source_url"])
-        tags = await tagger.generate(path, job.get("caption") or "")
-        db.set_downloaded(job_id, path, tags)
-        await update.effective_message.reply_text(_queued_message(job_id, tags))
-    except Exception:
-        settings = context.application.bot_data["settings"]
-        shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
-        checkpoints = any(
-            job.get(column)
-            for column in (
-                "instagram_media_id",
-                "facebook_media_id",
-                "threads_media_id",
-                "youtube_video_id",
-            )
-        )
-        if checkpoints:
-            db.set_failed(job_id, "Source download failed; checkpoints preserved")
-        else:
-            db.delete_job(job_id)
-        await update.effective_message.reply_text(_skipped_message(job_id, job["source_url"]))
+    _schedule_download(
+        context.application,
+        _download_and_tag(
+            update,
+            context,
+            job_id,
+            job["source_url"],
+            preserve_checkpoints=any(job.get(column) for column in PUBLISH_CHECKPOINT_COLUMNS),
+        ),
+        f"retry-instagram-{job_id}",
+    )
 
 
 async def pause(update, context):
@@ -364,6 +458,14 @@ async def publish_now(update, context):
         await update.effective_message.reply_text("Очередь пуста.")
         return
     await update.effective_message.reply_text("Публикую следующее видео…")
+    context.application.create_task(
+        _publish_now(update, context),
+        update=update,
+        name="publish-now",
+    )
+
+
+async def _publish_now(update, context):
     report = await publish_next(context)
     if report.outcome == "skipped":
         await update.effective_message.reply_text(report.message)
@@ -503,12 +605,7 @@ async def _attach_pending_caption(context, caption):
     tags = ""
     video_path = Path(job["video_path"]) if job.get("video_path") else None
     if video_path and video_path.is_file():
-        try:
-            tagger = context.application.bot_data["tagger"]
-            tags = await tagger.generate(video_path, caption)
-            db.set_tags(job["id"], tags)
-        except Exception:
-            tags = ""
+        tags = await _regenerate_tags(context, job["id"], video_path, caption)
     return job["id"], tags
 
 
