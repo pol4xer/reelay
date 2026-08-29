@@ -3,6 +3,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .scheduler import parse_post_times
+
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
@@ -96,6 +98,7 @@ class Settings:
         self.chrome_profile = os.getenv("CHROME_PROFILE", "Default").strip()
         self.timezone = os.getenv("TIMEZONE", "Europe/Istanbul").strip()
         self.posts_per_day = int(os.getenv("POSTS_PER_DAY", "5"))
+        self.post_times = parse_post_times(os.getenv("POST_TIMES", ""))
         self.post_window_start = os.getenv("POST_WINDOW_START", "09:00").strip()
         self.post_window_end = os.getenv("POST_WINDOW_END", "21:00").strip()
         self.schedule_grace_minutes = int(os.getenv("SCHEDULE_GRACE_MINUTES", "30"))

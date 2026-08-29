@@ -2,6 +2,8 @@ import re
 from copy import deepcopy
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .scheduler import parse_post_times
+
 
 def _field(
     key,
@@ -315,6 +317,16 @@ CONFIG_SCHEMA = (
         default="5",
     ),
     _field(
+        "POST_TIMES",
+        "schedule_storage",
+        "Exact publish times",
+        help_text=(
+            "Необязательный список точных слотов через запятую. "
+            "Если заполнен, имеет приоритет над количеством и окном публикации."
+        ),
+        placeholder="13:00,18:30,21:30",
+    ),
+    _field(
         "POST_WINDOW_START",
         "schedule_storage",
         "Publish window starts",
@@ -469,6 +481,17 @@ def normalize_updates(values):
             except ValueError:
                 errors[key] = "Укажите целое число."
             continue
+        if key == "POST_TIMES":
+            if not isinstance(value, str):
+                errors[key] = "Укажите времена текстом через запятую."
+                continue
+            try:
+                normalized[key] = ",".join(parse_post_times(value.strip()))
+            except ValueError:
+                errors[key] = (
+                    "Укажите 1–12 уникальных времён HH:MM через запятую строго по возрастанию."
+                )
+            continue
         if not isinstance(value, str):
             errors[key] = "Укажите текстовое значение."
             continue
@@ -539,8 +562,16 @@ def validate_values(values):
     for key in ("POST_WINDOW_START", "POST_WINDOW_END"):
         if values[key] and not CLOCK_TIME.fullmatch(values[key]):
             errors[key] = "Используйте формат HH:MM."
+    if values["POST_TIMES"]:
+        try:
+            parse_post_times(values["POST_TIMES"])
+        except ValueError:
+            errors["POST_TIMES"] = (
+                "Укажите 1–12 уникальных времён HH:MM через запятую строго по возрастанию."
+            )
     if (
-        values["POSTS_PER_DAY"] != "1"
+        not values["POST_TIMES"]
+        and values["POSTS_PER_DAY"] != "1"
         and values["POST_WINDOW_START"]
         and values["POST_WINDOW_START"] == values["POST_WINDOW_END"]
     ):

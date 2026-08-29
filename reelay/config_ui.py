@@ -120,6 +120,7 @@ def write_env_updates(path, updates, *, example_path=EXAMPLE_ENV_PATH):
 def sync_runtime_settings(path, updates):
     mirrored = {
         "POSTS_PER_DAY": "posts_per_day",
+        "POST_TIMES": "post_times",
         "TELEGRAM_OWNER_ID": "telegram_owner_id",
     }
     changes = {mirrored[key]: value for key, value in updates.items() if key in mirrored}
@@ -129,7 +130,7 @@ def sync_runtime_settings(path, updates):
     connection = sqlite3.connect(path, timeout=5)
     try:
         for key, value in changes.items():
-            if value:
+            if value or key == "post_times":
                 connection.execute(
                     """
                     INSERT INTO settings(key, value) VALUES (?, ?)
@@ -147,6 +148,7 @@ def sync_runtime_settings(path, updates):
 def runtime_setting_overrides(path):
     mirrored = {
         "posts_per_day": "POSTS_PER_DAY",
+        "post_times": "POST_TIMES",
         "telegram_owner_id": "TELEGRAM_OWNER_ID",
     }
     if not Path(path).is_file():

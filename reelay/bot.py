@@ -13,9 +13,11 @@ from telegram.ext import CommandHandler, MessageHandler, filters
 from .publishers import PublishRequest, YouTubePublisher
 from .scheduler import (
     current_schedule,
+    exact_schedule,
     next_scheduled_at,
     publish_next,
     reschedule_posts,
+    reschedule_times,
 )
 from .services import compose_caption
 
@@ -36,6 +38,7 @@ BOT_COMMANDS = [
     BotCommand("queue", "Показать очередь"),
     BotCommand("status", "Показать состояние сервиса"),
     BotCommand("posts", "Показать или изменить постов в день"),
+    BotCommand("times", "Показать или задать точные времена"),
     BotCommand("now", "Опубликовать следующее видео сейчас"),
     BotCommand("youtube", "Загрузить один приватный YouTube Short"),
     BotCommand("file", "Скачать MP4 по ID или shortcode"),
@@ -592,7 +595,40 @@ async def posts(update, context):
 
     count = int(context.args[0])
     times = reschedule_posts(application, count)
-    await update.effective_message.reply_text(_posts_message(count, times))
+    await update.effective_message.reply_text(
+        _posts_message(count, times) + "\nРежим: равномерно в окне публикации."
+    )
+
+
+async def times(update, context):
+    if not _authorized(update, context):
+        return
+
+    application = context.application
+    if not context.args:
+        configured = exact_schedule(application)
+        if configured:
+            await update.effective_message.reply_text(_times_message(configured))
+            return
+        generated = current_schedule(application)
+        await update.effective_message.reply_text(
+            "Точные времена не заданы.\n"
+            f"Равномерное расписание: {', '.join(generated)}\n"
+            "Чтобы задать точные слоты: /times 13:00 18:30 21:30"
+        )
+        return
+
+    raw_times = " ".join(context.args)
+    requested = [part for part in re.split(r"[\s,]+", raw_times.strip()) if part]
+    try:
+        configured = reschedule_times(application, requested)
+    except ValueError:
+        await update.effective_message.reply_text(
+            "Использование: /times HH:MM HH:MM ...\n"
+            "От 1 до 12 уникальных времён строго по возрастанию."
+        )
+        return
+    await update.effective_message.reply_text(_times_message(configured))
 
 
 async def _attach_pending_caption(context, caption):
@@ -662,6 +698,10 @@ def _posts_message(count, times):
     return f"Постов в день: {count}\nВремена: {', '.join(times)}"
 
 
+def _times_message(times):
+    return f"Точное расписание: {len(times)} в день\nВремена: {', '.join(times)}"
+
+
 def _help_message(times):
     return (
         "Reelay — очередь для Instagram Reels.\n\n"
@@ -673,7 +713,8 @@ def _help_message(times):
         "/help — показать эту инструкцию\n"
         "/queue — показать последние задания\n"
         "/status — состояние процесса, очереди и следующий слот\n"
-        "/posts [N] — показать расписание или задать 1–12 постов в день\n"
+        "/times [HH:MM ...] — показать или задать точные времена\n"
+        "/posts [N] — показать расписание или вернуться к 1–12 равномерным слотам\n"
         "/now — опубликовать следующее видео сейчас\n"
         "/youtube ID|SHORTCODE — приватно протестировать YouTube Short\n"
         "/file ID|SHORTCODE — отправить MP4 в Telegram\n"
@@ -697,5 +738,6 @@ def register_handlers(application):
     application.add_handler(CommandHandler("resume", resume))
     application.add_handler(CommandHandler("now", publish_now))
     application.add_handler(CommandHandler("youtube", youtube_test))
+    application.add_handler(CommandHandler("times", times))
     application.add_handler(CommandHandler("posts", posts))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))

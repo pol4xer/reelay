@@ -3,6 +3,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 LOGGER = logging.getLogger(__name__)
+MAX_POSTS_PER_DAY = 12
 
 
 def register_schedule(application, *, startup=False):
@@ -29,8 +30,8 @@ def register_schedule(application, *, startup=False):
 
 def reschedule_posts(application, count):
     count = int(count)
-    if not 1 <= count <= 12:
-        raise ValueError("posts_per_day must be between 1 and 12")
+    if not 1 <= count <= MAX_POSTS_PER_DAY:
+        raise ValueError(f"posts_per_day must be between 1 and {MAX_POSTS_PER_DAY}")
 
     settings = application.bot_data["settings"]
     build_post_times(
@@ -41,20 +42,50 @@ def reschedule_posts(application, count):
 
     db = application.bot_data["db"]
     db.set_setting("posts_per_day", count)
+    db.set_setting("post_times", "")
 
+    _remove_publish_jobs(application)
+    return register_schedule(application)
+
+
+def reschedule_times(application, post_times):
+    parsed = parse_post_times(post_times)
+    if not parsed:
+        raise ValueError("post_times must contain at least one time")
+
+    db = application.bot_data["db"]
+    db.set_setting("posts_per_day", len(parsed))
+    db.set_setting("post_times", ",".join(parsed))
+
+    _remove_publish_jobs(application)
+    return register_schedule(application)
+
+
+def _remove_publish_jobs(application):
     for job in application.job_queue.jobs():
         if job.name and job.name.startswith("publish-"):
             job.schedule_removal()
 
-    return register_schedule(application)
+
+def exact_schedule(application):
+    settings = application.bot_data["settings"]
+    db = application.bot_data["db"]
+    stored = db.get_setting("post_times")
+    if stored is None:
+        return list(getattr(settings, "post_times", ()))
+    return parse_post_times(stored)
 
 
 def current_schedule(application):
     settings = application.bot_data["settings"]
     db = application.bot_data["db"]
+    post_times = exact_schedule(application)
+    if post_times:
+        return post_times
+
     count = int(db.get_setting("posts_per_day", settings.posts_per_day))
-    if not 1 <= count <= 12:
-        raise ValueError("posts_per_day must be between 1 and 12")
+    if not 1 <= count <= MAX_POSTS_PER_DAY:
+        raise ValueError(f"posts_per_day must be between 1 and {MAX_POSTS_PER_DAY}")
     return build_post_times(
         count,
         settings.post_window_start,
@@ -133,8 +164,8 @@ def _register_startup_catchup(application):
 
 def build_post_times(count, window_start, window_end):
     count = int(count)
-    if not 1 <= count <= 12:
-        raise ValueError("posts_per_day must be between 1 and 12")
+    if not 1 <= count <= MAX_POSTS_PER_DAY:
+        raise ValueError(f"posts_per_day must be between 1 and {MAX_POSTS_PER_DAY}")
 
     start = _clock_minutes(window_start)
     end = _clock_minutes(window_end)
@@ -166,6 +197,39 @@ def _format_minutes(value):
     value %= 24 * 60
     hour, minute = divmod(value, 60)
     return f"{hour:02d}:{minute:02d}"
+
+
+def parse_post_times(value):
+    if isinstance(value, str):
+        raw_times = [part.strip() for part in value.split(",")]
+    else:
+        raw_times = [str(part).strip() for part in value]
+
+    if raw_times == [""]:
+        return []
+    if not 1 <= len(raw_times) <= MAX_POSTS_PER_DAY:
+        raise ValueError(f"post_times must contain between 1 and {MAX_POSTS_PER_DAY} times")
+    if any(not post_time for post_time in raw_times):
+        raise ValueError("post_times must be a comma-separated HH:MM list")
+
+    minutes = []
+    for post_time in raw_times:
+        if (
+            len(post_time) != 5
+            or post_time[2] != ":"
+            or not post_time[:2].isdigit()
+            or not post_time[3:].isdigit()
+        ):
+            raise ValueError("post_times must use HH:MM")
+        try:
+            minutes.append(_clock_minutes(post_time))
+        except ValueError as error:
+            raise ValueError("post_times must use HH:MM") from error
+    if len(set(minutes)) != len(minutes):
+        raise ValueError("post_times must be unique")
+    if minutes != sorted(minutes):
+        raise ValueError("post_times must be sorted chronologically")
+    return [_format_minutes(value) for value in minutes]
 
 
 async def publish_next(context):
