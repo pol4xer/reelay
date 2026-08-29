@@ -14,6 +14,10 @@ QUICK_TUNNEL_URL = re.compile(
     r"https://[a-z0-9-]+\.trycloudflare\.com",
     re.IGNORECASE,
 )
+TUNNEL_ATTEMPTS = 3
+TUNNEL_READY_TIMEOUT_SECONDS = 60
+TUNNEL_DNS_SETTLE_SECONDS = 10
+TUNNEL_VALIDATION_TIMEOUT_SECONDS = 90
 
 
 class _VideoHandler(BaseHTTPRequestHandler):
@@ -120,30 +124,58 @@ class QuickTunnelVideoTransport:
         )
         server_thread.start()
 
-        process = None
-        drain_task = None
         try:
-            executable = self._resolve_cloudflared()
             local_url = f"http://127.0.0.1:{server.server_port}"
-            process = await asyncio.create_subprocess_exec(
-                os.fspath(executable),
-                "tunnel",
-                "--no-autoupdate",
-                "--url",
-                local_url,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-            public_base = await self._read_tunnel_url(process)
-            drain_task = asyncio.create_task(self._drain_output(process.stdout))
-            public_video_url = f"{public_base}/video.mp4"
-            await self._validate(public_video_url, process)
-            yield public_video_url
+            executable = self._resolve_cloudflared()
+            last_error = None
+
+            for attempt in range(1, TUNNEL_ATTEMPTS + 1):
+                process = None
+                drain_task = None
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        os.fspath(executable),
+                        "tunnel",
+                        "--no-autoupdate",
+                        "--protocol",
+                        "http2",
+                        "--url",
+                        local_url,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                    )
+                    public_base = await self._read_tunnel_url(process)
+                    drain_task = asyncio.create_task(self._drain_output(process.stdout))
+                    public_video_url = f"{public_base}/video.mp4"
+
+                    # Quick Tunnel prints its hostname before public DNS is always
+                    # visible. Resolving it immediately can poison Docker's negative
+                    # DNS cache for the entire validation window.
+                    await asyncio.sleep(TUNNEL_DNS_SETTLE_SECONDS)
+                    await self._validate(public_video_url, process)
+                except (OSError, RuntimeError) as error:
+                    last_error = error
+                    await self._stop_process(process)
+                    if drain_task is not None:
+                        drain_task.cancel()
+                        await asyncio.gather(drain_task, return_exceptions=True)
+                    if attempt < TUNNEL_ATTEMPTS:
+                        await asyncio.sleep(2)
+                        continue
+                    raise RuntimeError(
+                        f"Cloudflare Quick Tunnel failed after {TUNNEL_ATTEMPTS} attempts: "
+                        f"{last_error}"
+                    ) from error
+
+                try:
+                    yield public_video_url
+                finally:
+                    await self._stop_process(process)
+                    if drain_task is not None:
+                        drain_task.cancel()
+                        await asyncio.gather(drain_task, return_exceptions=True)
+                return
         finally:
-            await self._stop_process(process)
-            if drain_task is not None:
-                drain_task.cancel()
-                await asyncio.gather(drain_task, return_exceptions=True)
             server.shutdown()
             server.server_close()
             await asyncio.to_thread(server_thread.join, 5)
@@ -180,14 +212,16 @@ class QuickTunnelVideoTransport:
     @staticmethod
     async def _read_tunnel_url(process):
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + 45
+        deadline = loop.time() + TUNNEL_READY_TIMEOUT_SECONDS
         recent_lines = []
+        public_base = None
+        registered = False
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 detail = " | ".join(recent_lines[-4:])[-700:]
                 raise RuntimeError(
-                    "Cloudflare Quick Tunnel did not provide a URL"
+                    "Cloudflare Quick Tunnel did not become ready"
                     + (f": {detail}" if detail else "")
                 )
             try:
@@ -210,7 +244,11 @@ class QuickTunnelVideoTransport:
                 recent_lines.append(decoded)
             match = QUICK_TUNNEL_URL.search(decoded)
             if match:
-                return match.group(0).rstrip("/")
+                public_base = match.group(0).rstrip("/")
+            if "registered tunnel connection" in decoded.casefold():
+                registered = True
+            if public_base and registered:
+                return public_base
 
     @staticmethod
     async def _drain_output(stream):
@@ -220,7 +258,7 @@ class QuickTunnelVideoTransport:
     @staticmethod
     async def _validate(video_url, process):
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + 45
+        deadline = loop.time() + TUNNEL_VALIDATION_TIMEOUT_SECONDS
         last_problem = "not reachable"
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(15.0, connect=10.0),
@@ -250,6 +288,9 @@ class QuickTunnelVideoTransport:
                         else:
                             last_problem = f"HTTP {response.status_code} {content_type}"
                 except httpx.HTTPError as error:
+                    detail = str(error).strip()
                     last_problem = error.__class__.__name__
+                    if detail:
+                        last_problem += f": {detail}"
                 await asyncio.sleep(2)
         raise RuntimeError("Cloudflare video URL is not publicly readable: " + last_problem)
