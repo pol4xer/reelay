@@ -1,4 +1,5 @@
 import asyncio
+import json
 import shutil
 import subprocess
 import tempfile
@@ -191,6 +192,64 @@ class WatermarkMediaTests(unittest.IsolatedAsyncioTestCase):
                 text=True,
             )
             self.assertEqual(probe.stdout.strip(), "h264,360,640,yuv420p")
+
+    async def test_shorter_audio_does_not_truncate_video(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "video.mp4"
+            process = await asyncio.create_subprocess_exec(
+                shutil.which("ffmpeg"),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0x345678:s=360x640:r=30:d=1.2",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=880:sample_rate=48000:duration=0.5",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart",
+                str(source),
+            )
+            self.assertEqual(await process.wait(), 0)
+            watermarker = ReelayWatermarker(
+                SimpleNamespace(
+                    video_watermark_enabled=True,
+                    data_dir=root,
+                    root=Path(__file__).resolve().parents[1],
+                )
+            )
+
+            derivative = await watermarker.prepare(source)
+            probe = subprocess.run(
+                [
+                    shutil.which("ffprobe"),
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_type,duration",
+                    "-of",
+                    "json",
+                    str(derivative),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            streams = json.loads(probe.stdout)["streams"]
+            video = next(item for item in streams if item["codec_type"] == "video")
+            audio = next(item for item in streams if item["codec_type"] == "audio")
+            self.assertGreater(float(video["duration"]), 1.1)
+            self.assertLess(float(audio["duration"]), float(video["duration"]))
 
     async def test_disabled_watermark_returns_original_without_generating_asset(self):
         with tempfile.TemporaryDirectory() as directory:

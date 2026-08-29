@@ -98,7 +98,6 @@ class ReelayWatermarker:
             "copy",
             "-movflags",
             "+faststart",
-            "-shortest",
             os.fspath(temporary),
         ]
         try:
