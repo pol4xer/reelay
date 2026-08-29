@@ -301,7 +301,6 @@ async def _download_and_tag(
             tags = await tagger.generate(path, latest_caption)
         if not db.set_downloaded(job_id, path, tags):
             return
-        await update.effective_message.reply_text(_queued_message(job_id, tags))
     except Exception:
         settings = context.application.bot_data["settings"]
         shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
@@ -309,7 +308,16 @@ async def _download_and_tag(
             db.set_failed(job_id, "Source download failed; checkpoints preserved")
         else:
             db.delete_job(job_id)
-        await update.effective_message.reply_text(_skipped_message(job_id, source_url))
+        try:
+            await update.effective_message.reply_text(_skipped_message(job_id, source_url))
+        except TelegramError as error:
+            LOGGER.warning("Could not notify about skipped job #%s: %s", job_id, error)
+        return
+
+    try:
+        await update.effective_message.reply_text(_queued_message(job_id, tags))
+    except TelegramError as error:
+        LOGGER.warning("Could not notify about queued job #%s: %s", job_id, error)
 
 
 async def _regenerate_tags(context, job_id, video_path, caption):
