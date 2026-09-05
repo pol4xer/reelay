@@ -145,6 +145,17 @@ class YouTubePublisher:
             },
         )
         if response.is_error:
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {}
+            if isinstance(payload, dict) and payload.get("error") == "invalid_grant":
+                raise RuntimeError(
+                    "invalid_grant: Google отклонил сохранённое разрешение YouTube "
+                    "(срок истёк или доступ отозван). Повторно подключите YouTube через OAuth. "
+                    "Если приложение в режиме Testing, сначала переведите его в In production: "
+                    "https://console.cloud.google.com/auth/audience"
+                )
             raise RuntimeError(self._response_error(response))
         try:
             access_token = response.json().get("access_token")

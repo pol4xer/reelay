@@ -119,6 +119,22 @@ video processing. Поэтому Reelay перед каждой Threads-публ
     Reelay. С этого момента общая очередь будет сохранять YouTube video ID и не
     дублировать уже успешную загрузку при `/retry`.
 
+### Если YouTube возвращает `invalid_grant`
+
+Это означает, что Google отклонил сохранённый refresh token: он мог истечь или быть
+отозван. Для External-приложения в режиме **Testing** разрешение с YouTube scopes
+истекает через семь дней. Для постоянной работы завершите **Branding**, затем
+переведите **Audience → Publishing status** в **In production** и повторите OAuth
+bootstrap выше. Само переключение режима не восстанавливает старый токен.
+Перенесите только новые YouTube-настройки на сервер и пересоздайте контейнер;
+не перезаписывайте токены других платформ. Сначала проверьте доступ к нужному
+каналу, затем используйте `/retry ID` для незавершённых отправок.
+
+Ошибка YouTube не останавливает остальные площадки. Частично отправленный ролик
+и успешные ID сохраняются; повтор не загружает его заново в завершённые площадки.
+Режим OAuth Production и аудит публичных загрузок YouTube — разные проверки.
+См. [срок действия Google OAuth tokens](https://developers.google.com/identity/protocols/oauth2#expiration).
+
 Первый тест будет `private`. Проекты YouTube API, не прошедшие compliance audit, принудительно оставляют API-загрузки приватными. Для публичных Shorts затем заполните [YouTube API Audit and Quota Extension Form](https://support.google.com/youtube/contact/yt_api_form). В форме укажите, что приложение локально загружает только авторизованный пользователем контент в его собственный канал через `videos.insert`.
 
 Официальные ссылки: [Upload a video](https://developers.google.com/youtube/v3/guides/uploading_a_video), [`videos.insert`](https://developers.google.com/youtube/v3/docs/videos/insert), [OAuth for installed apps](https://developers.google.com/youtube/v3/guides/auth/installed-apps), [3-minute Shorts](https://support.google.com/youtube/answer/15424877), [API audit](https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits).

@@ -20,6 +20,9 @@ PLATFORM_LABELS = {
 }
 BRAND_HASHTAG = "#Reelay"
 TIKTOK_HASHTAG_LIMIT = 5
+REPORT_ERROR_LIMIT = 400
+REPORT_MEDIA_ID_LIMIT = 160
+REPORT_SOURCE_LIMIT = 512
 HASHTAG_PATTERN = re.compile(r"(?<!\w)#[\w]+", re.UNICODE)
 
 
@@ -80,6 +83,9 @@ class PublishingService:
             )
 
         watermarked_video_path = None
+        watermark_error = None
+        failures = []
+        delivered = set()
         for platform, publisher in self.publishers.items():
             column = PLATFORM_MEDIA_COLUMNS[platform.value]
             if _checkpoint_complete(platform, job.get(column)):
@@ -94,8 +100,14 @@ class PublishingService:
             try:
                 publish_video_path = video_path
                 if platform is not Platform.TIKTOK:
+                    if watermark_error is not None:
+                        raise watermark_error
                     if watermarked_video_path is None:
-                        watermarked_video_path = await self.watermarker.prepare(video_path)
+                        try:
+                            watermarked_video_path = await self.watermarker.prepare(video_path)
+                        except Exception as error:
+                            watermark_error = error
+                            raise
                     publish_video_path = watermarked_video_path
                 title = ""
                 if platform is Platform.YOUTUBE:
@@ -116,32 +128,49 @@ class PublishingService:
                         f"Publisher contract mismatch: expected {platform.value}, "
                         f"got {result.platform.value}"
                     )
+                if not _checkpoint_complete(platform, result.media_id):
+                    raise RuntimeError("Платформа не подтвердила завершение отправки")
+            except Exception as error:
+                failures.append((platform, error))
+                continue
+
+            # An upload has succeeded; a failed checkpoint is a shared storage
+            # problem with an ambiguous external side effect, not a platform failure.
+            try:
                 if not self.db.set_platform_media_id(
                     job_id,
                     platform.value,
                     result.media_id,
                 ):
                     raise RuntimeError("Platform checkpoint was not saved")
-                job[column] = result.media_id
-                self.db.record_publish_attempt(
-                    job_id,
-                    "inbox_delivered" if platform is Platform.TIKTOK else "published",
-                    platform=platform.value,
-                    detail=result.media_id,
-                )
             except Exception as error:
-                return self._fail(job, platform, error)
-
-        missing = self.missing_platforms(job)
-        if missing:
-            return self._fail(
-                job,
-                missing[0],
-                "Не сохранены ID платформ: " + ", ".join(platform.value for platform in missing),
+                failures.append(
+                    (
+                        platform,
+                        f"Отправка вернула ID {result.media_id}, но сохранить ID в SQLite "
+                        f"не удалось: {error}. Дальнейшие отправки остановлены. "
+                        "Перед повтором проверьте публикацию на платформе и восстановите ID.",
+                    )
+                )
+                return self._failures(job, failures, delivered, retry_safe=False)
+            job[column] = result.media_id
+            delivered.add(platform)
+            self.db.record_publish_attempt(
+                job_id,
+                "inbox_delivered" if platform is Platform.TIKTOK else "published",
+                platform=platform.value,
+                detail=result.media_id,
             )
 
+        failed_platforms = {platform for platform, _error in failures}
+        for platform in self.missing_platforms(job):
+            if platform not in failed_platforms:
+                failures.append((platform, "Не сохранён ID завершённой отправки"))
+        if failures:
+            return self._failures(job, failures, delivered)
+
         if not self.db.mark_completed(job_id):
-            return self._fail(job, None, "Не удалось завершить задание в SQLite")
+            return self._failures(job, [(None, "Не удалось завершить задание в SQLite")], delivered)
 
         if self.settings.delete_after_publish:
             try:
@@ -163,8 +192,10 @@ class PublishingService:
                 )
 
         completed = self.db.get_job(job_id) or job
-        message = success_message(completed, self.publishers)
-        followup_messages = success_followup_messages(completed, self.publishers)
+        message = success_message(
+            completed, self.publishers, include_tiktok_instructions=Platform.TIKTOK in delivered
+        )
+        followup_messages = success_followup_messages(completed, delivered)
         self.db.record_publish_attempt(job_id, "completed")
         LOGGER.info("Publication completed for job #%s", job_id)
         return PublicationReport(
@@ -195,25 +226,53 @@ class PublishingService:
         )
 
     def _fail(self, job, platform, error):
-        label = PLATFORM_LABELS.get(platform, "Reelay")
-        reason = str(error).strip() or error.__class__.__name__
-        stored_error = f"{label}: {reason}"
-        self.db.set_failed(job["id"], stored_error)
-        self.db.record_publish_attempt(
-            job["id"],
-            "failed",
-            platform=platform.value if platform else None,
-            detail=reason,
+        return self._failures(job, [(platform, error)])
+
+    def _failures(self, job, failures, delivered=(), *, retry_safe=True):
+        reasons = [
+            (platform, str(error).strip() or error.__class__.__name__)
+            for platform, error in failures
+        ]
+        stored_error = "\n".join(
+            f"{PLATFORM_LABELS.get(platform, 'Reelay')}: {reason}" for platform, reason in reasons
         )
+        self.db.set_failed(job["id"], stored_error)
+        for platform, reason in reasons:
+            self.db.record_publish_attempt(
+                job["id"],
+                "failed",
+                platform=platform.value if platform else None,
+                detail=reason,
+            )
         LOGGER.error("Publication failed for job #%s: %s", job["id"], stored_error)
+        lines = [f"Ошибка публикации #{job['id']}:"]
+        for platform in self.publishers:
+            media_id = job.get(PLATFORM_MEDIA_COLUMNS[platform.value])
+            if _checkpoint_complete(platform, media_id):
+                if str(media_id).startswith("not-required-"):
+                    lines.append(f"{PLATFORM_LABELS[platform]}: отправка не требуется")
+                else:
+                    status = "отправлено" if platform in delivered else "отправлено ранее"
+                    displayed_id = _report_excerpt(media_id, REPORT_MEDIA_ID_LIMIT)
+                    lines.append(f"{PLATFORM_LABELS[platform]}: {status} · {displayed_id}")
+        lines.extend(
+            f"{PLATFORM_LABELS.get(platform, 'Reelay')}: ошибка · "
+            f"{_report_excerpt(reason, REPORT_ERROR_LIMIT)}"
+            for platform, reason in reasons
+        )
+        lines.append(f"Источник: {_report_excerpt(job['source_url'], REPORT_SOURCE_LIMIT)}")
+        if retry_safe:
+            lines.append(f"Повторить только незавершённые отправки: /retry {job['id']}")
+        followup_messages = success_followup_messages(job, delivered)
+        if followup_messages:
+            lines.extend(["", _tiktok_instructions()])
         return PublicationReport(
             outcome="failed",
             job_id=job["id"],
-            platform=platform,
-            message=(
-                f"Ошибка публикации #{job['id']} · {label}: {reason}\nИсточник: {job['source_url']}"
-            ),
+            platform=reasons[0][0],
+            message="\n".join(lines),
             notify_owner=True,
+            followup_messages=followup_messages,
         )
 
 
@@ -252,21 +311,34 @@ def _checkpoint_complete(platform, value):
     return not (platform is Platform.TIKTOK and str(value).startswith(PENDING_TIKTOK_PREFIX))
 
 
-def success_message(job, publishers):
+def _report_excerpt(value, limit):
+    # Telegram counts UTF-16 units; supplementary characters take two units.
+    # Keep full provider responses in SQLite, only shorten the user-facing report.
+    text = str(value)
+    encoded = text.encode("utf-16-le")
+    if len(encoded) <= limit * 2:
+        return text
+    return encoded[: (limit - 1) * 2].decode("utf-16-le", errors="ignore") + "…"
+
+
+def success_message(job, publishers, *, include_tiktok_instructions=True):
     lines = [f"Готово #{job['id']}:"]
     for platform in publishers:
         media_id = job.get(PLATFORM_MEDIA_COLUMNS[platform.value])
         if media_id and not str(media_id).startswith("not-required-"):
-            lines.append(f"{PLATFORM_LABELS[platform]}: {media_id}")
-    if _has_completed_tiktok_delivery(job, publishers):
-        lines.extend(
-            [
-                "",
-                "TikTok: откройте уведомление Inbox, вставьте хэштеги "
-                "из следующего сообщения и нажмите Publish.",
-            ]
-        )
+            lines.append(
+                f"{PLATFORM_LABELS[platform]}: {_report_excerpt(media_id, REPORT_MEDIA_ID_LIMIT)}"
+            )
+    if include_tiktok_instructions and _has_completed_tiktok_delivery(job, publishers):
+        lines.extend(["", _tiktok_instructions()])
     return "\n".join(lines)
+
+
+def _tiktok_instructions():
+    return (
+        "TikTok: откройте уведомление Inbox, вставьте хэштеги "
+        "из следующего сообщения и нажмите Publish."
+    )
 
 
 def success_followup_messages(job, publishers):
