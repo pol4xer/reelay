@@ -15,10 +15,28 @@ from .tagger import AutoTagger
 LOGGER = logging.getLogger(__name__)
 
 
+def _validate_owner_configuration(settings, db):
+    stored = db.get_setting("telegram_owner_id")
+    if stored not in (None, ""):
+        try:
+            owner_id = int(stored)
+        except (TypeError, ValueError):
+            raise RuntimeError("The stored Telegram owner ID is invalid") from None
+        if owner_id <= 0:
+            raise RuntimeError("The stored Telegram owner ID must be positive")
+        return
+    if settings.telegram_owner_id is not None or settings.telegram_owner_username:
+        return
+    raise RuntimeError(
+        "Configure TELEGRAM_OWNER_ID or TELEGRAM_OWNER_USERNAME before the first start"
+    )
+
+
 def build_application(settings=None):
     settings = settings or Settings()
     db = QueueDB(settings.db_path)
     db.init()
+    _validate_owner_configuration(settings, db)
     rebased = db.rebase_existing_video_paths(settings.video_dir)
     if rebased:
         LOGGER.warning("Rebased moved video paths: %s", rebased)

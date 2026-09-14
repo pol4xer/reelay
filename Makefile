@@ -15,7 +15,7 @@ help:
 	@echo "  make tiktok-oauth     Authorize a TikTok account for Inbox uploads"
 	@echo "  make format           Fix Ruff lint issues and format Python code"
 	@echo "  make test             Run the Python test suite"
-	@echo "  make check            Check Ruff lint and formatting"
+	@echo "  make check            Check lockfile, lint, tests, frontend, and deployment config"
 	@echo "  make queue-audit      Validate queue state and every pending MP4"
 	@echo "  make server-bundle    Build one credential+queue Docker deploy ZIP"
 	@echo "  make service-install  Install and start the macOS LaunchAgent"
@@ -25,7 +25,7 @@ help:
 	@echo "  make service-uninstall Remove the macOS LaunchAgent"
 
 install:
-	$(UV) sync --group dev
+	$(UV) sync --frozen --group dev
 
 run:
 	$(UV) run --no-sync python -m $(APP_MODULE)
@@ -52,7 +52,7 @@ check:
 	@if command -v node >/dev/null 2>&1; then node --check reelay/config_ui_static/app.js; fi
 	@if command -v docker >/dev/null 2>&1; then env REELAY_ENV_FILE=/dev/null docker compose config --quiet; fi
 	bash -n scripts/service.sh scripts/server-preflight.sh scripts/build-server-bundle.sh deploy/docker/install.sh "Reelay Settings.command"
-	plutil -lint deploy/macos/com.pol4xer.reelay.plist.template
+	$(UV) run --no-sync python -c 'import plistlib; from pathlib import Path; plistlib.loads(Path("deploy/macos/com.pol4xer.reelay.plist.template").read_bytes()); print("LaunchAgent plist: valid")'
 
 queue-audit:
 	$(UV) run --no-sync python -m reelay.maintenance queue-audit --probe

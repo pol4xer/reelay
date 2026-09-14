@@ -3,6 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .config_schema import INTEGER_RANGES, TELEGRAM_USERNAME
 from .scheduler import parse_post_times
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,10 +41,26 @@ class Settings:
 
         self.telegram_token = _required("TELEGRAM_BOT_TOKEN")
         owner_id = os.getenv("TELEGRAM_OWNER_ID", "").strip()
-        self.telegram_owner_id = int(owner_id) if owner_id else None
+        self.telegram_owner_id = None
+        if owner_id:
+            try:
+                self.telegram_owner_id = int(owner_id)
+            except ValueError:
+                raise RuntimeError("TELEGRAM_OWNER_ID must be a positive integer") from None
+            minimum, maximum = INTEGER_RANGES["TELEGRAM_OWNER_ID"]
+            if not minimum <= self.telegram_owner_id <= maximum:
+                raise RuntimeError(f"TELEGRAM_OWNER_ID must be between {minimum} and {maximum}")
         self.telegram_owner_username = (
-            os.getenv("TELEGRAM_OWNER_USERNAME", "pol4xer").strip().lstrip("@").lower()
+            os.getenv("TELEGRAM_OWNER_USERNAME", "").strip().lstrip("@").lower()
         )
+        if self.telegram_owner_username and not TELEGRAM_USERNAME.fullmatch(
+            self.telegram_owner_username
+        ):
+            raise RuntimeError(
+                "TELEGRAM_OWNER_USERNAME must contain only letters, numbers, or underscores"
+            )
+        # An existing queue may already contain the owner's numeric ID. The application
+        # checks that trusted identity after opening the queue, before starting Telegram.
 
         self.meta_api_version = os.getenv("META_API_VERSION", "v26.0").strip()
         self.meta_ig_user_id = _required("META_IG_USER_ID")
@@ -115,7 +132,7 @@ class Settings:
                     raise RuntimeError(f"{flag}=true requires {', '.join(missing)}")
 
         self.chrome_profile = os.getenv("CHROME_PROFILE", "Default").strip()
-        self.timezone = os.getenv("TIMEZONE", "Europe/Istanbul").strip()
+        self.timezone = os.getenv("TIMEZONE", "UTC").strip()
         self.posts_per_day = int(os.getenv("POSTS_PER_DAY", "5"))
         self.post_times = parse_post_times(os.getenv("POST_TIMES", ""))
         self.post_window_start = os.getenv("POST_WINDOW_START", "09:00").strip()

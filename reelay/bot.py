@@ -34,19 +34,19 @@ PUBLISH_CHECKPOINT_COLUMNS = (
     "tiktok_publish_id",
 )
 BOT_COMMANDS = [
-    BotCommand("start", "Подключить или проверить бота"),
-    BotCommand("help", "Показать инструкцию и команды"),
-    BotCommand("queue", "Показать очередь"),
-    BotCommand("status", "Показать состояние сервиса"),
-    BotCommand("posts", "Показать или изменить постов в день"),
-    BotCommand("times", "Показать или задать точные времена"),
-    BotCommand("now", "Опубликовать следующее видео сейчас"),
-    BotCommand("youtube", "Загрузить один приватный YouTube Short"),
-    BotCommand("file", "Скачать MP4 по ID или shortcode"),
-    BotCommand("drop", "Удалить по ID или shortcode"),
-    BotCommand("retry", "Повторить failed по ID или shortcode"),
-    BotCommand("pause", "Приостановить публикации"),
-    BotCommand("resume", "Возобновить публикации"),
+    BotCommand("start", "Connect or check the bot"),
+    BotCommand("help", "Show instructions and commands"),
+    BotCommand("queue", "Show the queue"),
+    BotCommand("status", "Show service status"),
+    BotCommand("posts", "Show or change posts per day"),
+    BotCommand("times", "Show or set exact posting times"),
+    BotCommand("now", "Publish the next video now"),
+    BotCommand("youtube", "Upload one private YouTube Short"),
+    BotCommand("file", "Download an MP4 by ID or shortcode"),
+    BotCommand("drop", "Delete a job by ID or shortcode"),
+    BotCommand("retry", "Retry a failed job by ID or shortcode"),
+    BotCommand("pause", "Pause publishing"),
+    BotCommand("resume", "Resume publishing"),
 ]
 
 
@@ -182,19 +182,21 @@ async def start(update, context):
 
     if owner_id is not None:
         if user.id == owner_id:
-            await update.effective_message.reply_text(
-                "Reelay готов. Откройте Menu или отправьте /help."
-            )
+            await update.effective_message.reply_text("Reelay is ready. Open Menu or send /help.")
         return
 
     settings = context.application.bot_data["settings"]
     username = (user.username or "").lower()
-    if username != settings.telegram_owner_username:
+    if (
+        not username
+        or not settings.telegram_owner_username
+        or username != settings.telegram_owner_username
+    ):
         return
 
     db.set_setting("telegram_owner_id", user.id)
     await update.effective_message.reply_text(
-        f"Подключено. Telegram ID: {user.id}\nОткройте Menu или отправьте /help."
+        f"Connected. Telegram ID: {user.id}\nOpen Menu or send /help."
     )
 
 
@@ -213,7 +215,7 @@ async def add_link(update, context):
     blocks = _instagram_blocks(text)
     if blocks is None:
         await update.effective_message.reply_text(
-            "Первая непустая строка должна быть одной ссылкой Instagram."
+            "The first nonempty line must contain a single Instagram link."
         )
         return
     if not blocks:
@@ -223,7 +225,7 @@ async def add_link(update, context):
             await update.effective_message.reply_text(_caption_updated_message(job_id, tags))
             return
         await update.effective_message.reply_text(
-            "Первая строка должна быть одной ссылкой Instagram."
+            "The first line must contain a single Instagram link."
         )
         return
 
@@ -253,7 +255,7 @@ async def _add_instagram_job(update, context, source_url, shortcode, caption):
         }:
             db.set_setting("pending_caption_job_id", existing["id"])
         await update.effective_message.reply_text(
-            f"Уже есть: #{existing['id']} · {existing['status']}"
+            f"Already added: #{existing['id']} · {existing['status']}"
         )
         return
 
@@ -262,7 +264,7 @@ async def _add_instagram_job(update, context, source_url, shortcode, caption):
     except sqlite3.IntegrityError:
         existing = db.get_job_by_shortcode(shortcode)
         await update.effective_message.reply_text(
-            f"Уже есть: #{existing['id']} · {existing['status']}"
+            f"Already added: #{existing['id']} · {existing['status']}"
         )
         return
 
@@ -271,7 +273,7 @@ async def _add_instagram_job(update, context, source_url, shortcode, caption):
     else:
         db.set_setting("pending_caption_job_id", job_id)
 
-    await update.effective_message.reply_text(f"Скачиваю #{job_id}…")
+    await update.effective_message.reply_text(f"Downloading #{job_id}…")
     _schedule_download(
         context.application,
         _download_and_tag(update, context, job_id, source_url),
@@ -345,11 +347,11 @@ async def queue(update, context):
     db = context.application.bot_data["db"]
     jobs = db.list_jobs()
     if not jobs:
-        await update.effective_message.reply_text("Очередь пуста.")
+        await update.effective_message.reply_text("The queue is empty.")
         return
 
-    paused = " · пауза" if db.is_paused() else ""
-    rows = [f"Последние задания{paused}:"]
+    paused = " · paused" if db.is_paused() else ""
+    rows = [f"Recent jobs{paused}:"]
     for job in jobs:
         row = f"#{job['id']} · {job['status']} · {job['shortcode']}"
         destination_ids = _destination_ids(job)
@@ -358,7 +360,7 @@ async def queue(update, context):
         if job.get("tags"):
             row += f"\n{_short_tags(job['tags'])}"
         if job["status"] == "failed":
-            row += f"\nИсточник: {job['source_url']}"
+            row += f"\nSource: {job['source_url']}"
             if job["error"]:
                 row += f"\n{_short_error(job['error'], 160)}"
         rows.append(row)
@@ -371,16 +373,16 @@ async def send_file(update, context):
 
     job = _job_from_args(context)
     if not job:
-        await update.effective_message.reply_text("Использование: /file 33 или /file SHORTCODE")
+        await update.effective_message.reply_text("Usage: /file 33 or /file SHORTCODE")
         return
 
     path = Path(job["video_path"]) if job and job["video_path"] else None
     if not path or not path.is_file():
-        await update.effective_message.reply_text("Файл не найден.")
+        await update.effective_message.reply_text("File not found.")
         return
 
     if path.stat().st_size > MAX_TELEGRAM_FILE_SIZE:
-        await update.effective_message.reply_text(f"Больше 50 МБ: {path}")
+        await update.effective_message.reply_text(f"File exceeds 50 MB: {path}")
         return
 
     with path.open("rb") as document:
@@ -396,20 +398,20 @@ async def drop(update, context):
 
     job = _job_from_args(context)
     if not job:
-        await update.effective_message.reply_text("Использование: /drop 33 или /drop SHORTCODE")
+        await update.effective_message.reply_text("Usage: /drop 33 or /drop SHORTCODE")
         return
 
     db = context.application.bot_data["db"]
     job_id = job["id"]
     if job["status"] in {"downloading", "publishing"}:
-        action = "скачивается" if job["status"] == "downloading" else "публикуется"
-        await update.effective_message.reply_text(f"Сейчас {action}.")
+        action = "downloading" if job["status"] == "downloading" else "publishing"
+        await update.effective_message.reply_text(f"Currently {action}.")
         return
 
     db.delete_job(job_id)
     settings = context.application.bot_data["settings"]
     shutil.rmtree(settings.video_dir / str(job_id), ignore_errors=True)
-    await update.effective_message.reply_text(f"Удалено: #{job_id}")
+    await update.effective_message.reply_text(f"Deleted: #{job_id}")
 
 
 async def retry(update, context):
@@ -418,21 +420,21 @@ async def retry(update, context):
 
     job = _job_from_args(context)
     if not job:
-        await update.effective_message.reply_text("Использование: /retry 33 или /retry SHORTCODE")
+        await update.effective_message.reply_text("Usage: /retry 33 or /retry SHORTCODE")
         return
 
     db = context.application.bot_data["db"]
     job_id = job["id"]
     if job["status"] != "failed":
-        await update.effective_message.reply_text("Повтор доступен только для failed.")
+        await update.effective_message.reply_text("Only failed jobs can be retried.")
         return
 
     if db.retry(job_id):
-        await update.effective_message.reply_text(f"Снова в очереди: #{job_id}")
+        await update.effective_message.reply_text(f"Queued again: #{job_id}")
         return
 
     db.mark_downloading(job_id)
-    await update.effective_message.reply_text(f"Скачиваю #{job_id} заново…")
+    await update.effective_message.reply_text(f"Downloading #{job_id} again…")
     _schedule_download(
         context.application,
         _download_and_tag(
@@ -450,7 +452,7 @@ async def pause(update, context):
     if not _authorized(update, context):
         return
     context.application.bot_data["db"].set_paused(True)
-    await update.effective_message.reply_text("Публикация приостановлена.")
+    await update.effective_message.reply_text("Publishing paused.")
 
 
 async def resume(update, context):
@@ -459,7 +461,7 @@ async def resume(update, context):
     context.application.bot_data["db"].set_paused(False)
     next_run = next_scheduled_at(context.application)
     await update.effective_message.reply_text(
-        f"Публикация возобновлена.\nСледующий слот: {next_run:%d.%m %H:%M}."
+        f"Publishing resumed.\nNext slot: {next_run:%d.%m %H:%M}."
     )
 
 
@@ -467,9 +469,9 @@ async def publish_now(update, context):
     if not _authorized(update, context):
         return
     if not context.application.bot_data["db"].next_queued():
-        await update.effective_message.reply_text("Очередь пуста.")
+        await update.effective_message.reply_text("The queue is empty.")
         return
-    await update.effective_message.reply_text("Публикую следующее видео…")
+    await update.effective_message.reply_text("Publishing the next video…")
     context.application.create_task(
         _publish_now(update, context),
         update=update,
@@ -490,10 +492,10 @@ async def status_command(update, context):
     db = context.application.bot_data["db"]
     publishers = context.application.bot_data["publishers"]
     next_run = next_scheduled_at(context.application)
-    state = "пауза" if db.is_paused() else "активен"
+    state = "paused" if db.is_paused() else "active"
     platforms = ", ".join(platform.value for platform in publishers)
     last_attempt = db.latest_publish_attempt()
-    last_line = "нет запусков"
+    last_line = "no attempts yet"
     if last_attempt:
         last_line = f"{last_attempt['created_at']} · {last_attempt['outcome']}"
         if last_attempt.get("job_id"):
@@ -501,10 +503,10 @@ async def status_command(update, context):
 
     await update.effective_message.reply_text(
         f"Reelay: {state}\n"
-        f"В очереди: {db.count_jobs('queued')}\n"
-        f"Платформы: {platforms}\n"
-        f"Следующий слот: {next_run:%d.%m %H:%M}\n"
-        f"Последний запуск: {last_line}"
+        f"Queued: {db.count_jobs('queued')}\n"
+        f"Platforms: {platforms}\n"
+        f"Next slot: {next_run:%d.%m %H:%M}\n"
+        f"Last attempt: {last_line}"
     )
 
 
@@ -514,21 +516,19 @@ async def youtube_test(update, context):
 
     job = _job_from_args(context)
     if not job:
-        await update.effective_message.reply_text(
-            "Использование: /youtube 33 или /youtube SHORTCODE"
-        )
+        await update.effective_message.reply_text("Usage: /youtube 33 or /youtube SHORTCODE")
         return
 
     if job.get("youtube_video_id") or job.get("youtube_test_video_id"):
         video_id = job.get("youtube_video_id") or job["youtube_test_video_id"]
         await update.effective_message.reply_text(
-            f"Уже загружено в YouTube: {video_id}\nhttps://youtu.be/{video_id}"
+            f"Already uploaded to YouTube: {video_id}\nhttps://youtu.be/{video_id}"
         )
         return
 
     video_path = Path(job["video_path"]) if job.get("video_path") else None
     if not video_path or not video_path.is_file():
-        await update.effective_message.reply_text("Локальный MP4 не найден.")
+        await update.effective_message.reply_text("Local MP4 not found.")
         return
 
     settings = context.application.bot_data["settings"]
@@ -542,10 +542,14 @@ async def youtube_test(update, context):
         if not value
     ]
     if missing:
-        await update.effective_message.reply_text("YouTube OAuth не готов: " + ", ".join(missing))
+        await update.effective_message.reply_text(
+            "YouTube OAuth is not configured: " + ", ".join(missing)
+        )
         return
 
-    await update.effective_message.reply_text(f"Загружаю #{job['id']} в YouTube как private…")
+    await update.effective_message.reply_text(
+        f"Uploading #{job['id']} to YouTube as a private video…"
+    )
     publisher = YouTubePublisher(settings)
     publisher.privacy_status = "private"
     try:
@@ -562,16 +566,16 @@ async def youtube_test(update, context):
         video_id = result.media_id
         db = context.application.bot_data["db"]
         if not db.set_youtube_test_video_id(job["id"], video_id):
-            raise RuntimeError("YouTube test ID не сохранился в очереди")
+            raise RuntimeError("Could not save the YouTube test video ID in the queue")
     except Exception as error:
         await update.effective_message.reply_text(
-            f"YouTube не загрузил #{job['id']}: {_short_error(error)}\n"
-            f"Источник: {job['source_url']}"
+            f"YouTube upload failed for #{job['id']}: {_short_error(error)}\n"
+            f"Source: {job['source_url']}"
         )
         return
 
     await update.effective_message.reply_text(
-        f"YouTube private готов: #{job['id']} · {video_id}\n"
+        f"Private YouTube upload complete: #{job['id']} · {video_id}\n"
         f"Title: {title}\n"
         f"https://youtu.be/{video_id}"
     )
@@ -592,13 +596,13 @@ async def posts(update, context):
         or not context.args[0].isdigit()
         or not 1 <= int(context.args[0]) <= 12
     ):
-        await update.effective_message.reply_text("Использование: /posts N, где N от 1 до 12.")
+        await update.effective_message.reply_text("Usage: /posts N, where N is between 1 and 12.")
         return
 
     count = int(context.args[0])
     times = reschedule_posts(application, count)
     await update.effective_message.reply_text(
-        _posts_message(count, times) + "\nРежим: равномерно в окне публикации."
+        _posts_message(count, times) + "\nMode: evenly spaced within the posting window."
     )
 
 
@@ -614,9 +618,9 @@ async def times(update, context):
             return
         generated = current_schedule(application)
         await update.effective_message.reply_text(
-            "Точные времена не заданы.\n"
-            f"Равномерное расписание: {', '.join(generated)}\n"
-            "Чтобы задать точные слоты: /times 13:00 18:30 21:30"
+            "Exact posting times are not set.\n"
+            f"Evenly spaced schedule: {', '.join(generated)}\n"
+            "To set exact slots: /times 13:00 18:30 21:30"
         )
         return
 
@@ -626,8 +630,7 @@ async def times(update, context):
         configured = reschedule_times(application, requested)
     except ValueError:
         await update.effective_message.reply_text(
-            "Использование: /times HH:MM HH:MM ...\n"
-            "От 1 до 12 уникальных времён строго по возрастанию."
+            "Usage: /times HH:MM HH:MM ...\nEnter 1–12 unique times in ascending order."
         )
         return
     await update.effective_message.reply_text(_times_message(configured))
@@ -684,54 +687,54 @@ def _destination_ids(job):
 
 
 def _queued_message(job_id, tags):
-    message = f"В очереди: #{job_id}"
+    message = f"Queued: #{job_id}"
     if tags:
         message += f"\n{tags}"
     return message
 
 
 def _skipped_message(job_id, source_url):
-    return f"Пропущено: #{job_id}\nИсточник: {source_url}"
+    return f"Skipped: #{job_id}\nSource: {source_url}"
 
 
 def _caption_updated_message(job_id, tags):
-    message = f"Caption обновлён: #{job_id}"
+    message = f"Caption updated: #{job_id}"
     if tags:
         message += f"\n{tags}"
     return message
 
 
 def _posts_message(count, times):
-    return f"Постов в день: {count}\nВремена: {', '.join(times)}"
+    return f"Posts per day: {count}\nTimes: {', '.join(times)}"
 
 
 def _times_message(times):
-    return f"Точное расписание: {len(times)} в день\nВремена: {', '.join(times)}"
+    return f"Exact schedule: {len(times)} per day\nTimes: {', '.join(times)}"
 
 
 def _help_message(times):
     return (
-        "Reelay — очередь для Instagram Reels.\n\n"
-        "Как добавить видео:\n"
-        "Отправьте ссылку Instagram первой строкой. Caption можно "
-        "добавить со второй строки или следующим сообщением.\n\n"
-        "Команды:\n"
-        "/start — подключить или проверить бота\n"
-        "/help — показать эту инструкцию\n"
-        "/queue — показать последние задания\n"
-        "/status — состояние процесса, очереди и следующий слот\n"
-        "/times [HH:MM ...] — показать или задать точные времена\n"
-        "/posts [N] — показать расписание или вернуться к 1–12 равномерным слотам\n"
-        "/now — опубликовать следующее видео сейчас\n"
-        "/youtube ID|SHORTCODE — приватно протестировать YouTube Short\n"
-        "/file ID|SHORTCODE — отправить MP4 в Telegram\n"
-        "/drop ID|SHORTCODE — удалить задание и локальный файл\n"
-        "/retry ID|SHORTCODE — повторить failed\n"
-        "/pause — приостановить публикации\n"
-        "/resume — возобновить публикации\n\n"
-        "После доставки в TikTok Inbox бот следующим сообщением пришлёт только готовые "
-        "хэштеги: скопируйте их целиком, откройте уведомление и вручную нажмите Publish.\n\n"
-        f"Текущее расписание: {len(times)} в день — {', '.join(times)}"
+        "Reelay — a publishing queue for Instagram Reels.\n\n"
+        "How to add a video:\n"
+        "Send an Instagram link on the first line. Add a caption "
+        "starting on the second line or in a follow-up message.\n\n"
+        "Commands:\n"
+        "/start — connect or check the bot\n"
+        "/help — show these instructions\n"
+        "/queue — show recent jobs\n"
+        "/status — show service status, the queue and the next slot\n"
+        "/times [HH:MM ...] — show or set exact posting times\n"
+        "/posts [N] — show the schedule or switch to 1–12 evenly spaced slots\n"
+        "/now — publish the next video now\n"
+        "/youtube ID|SHORTCODE — upload a private YouTube Short for testing\n"
+        "/file ID|SHORTCODE — send an MP4 to Telegram\n"
+        "/drop ID|SHORTCODE — delete a job and its local file\n"
+        "/retry ID|SHORTCODE — retry a failed job\n"
+        "/pause — pause publishing\n"
+        "/resume — resume publishing\n\n"
+        "After delivery to TikTok Inbox, the bot sends ready-to-copy "
+        "hashtags in a separate message. Copy them, open the notification and tap Publish.\n\n"
+        f"Current schedule: {len(times)} per day — {', '.join(times)}"
     )
 
 

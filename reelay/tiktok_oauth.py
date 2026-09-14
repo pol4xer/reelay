@@ -44,11 +44,11 @@ class CallbackHandler(BaseHTTPRequestHandler):
             "error_description": parameters.get("error_description", [""])[0],
         }
         body = (
-            "<!doctype html><meta charset='utf-8'>"
-            "<title>Reelay TikTok OAuth</title>"
-            "<h2>Ответ TikTok получен</h2>"
-            "<p>Эту вкладку можно закрыть и вернуться в терминал.</p>"
-        ).encode()
+            b"<!doctype html><html lang='en'><meta charset='utf-8'>"
+            b"<title>Reelay TikTok OAuth</title>"
+            b"<h2>TikTok response received</h2>"
+            b"<p>You can close this tab and return to the terminal.</p>"
+        )
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -62,7 +62,7 @@ class CallbackHandler(BaseHTTPRequestHandler):
 def _required_env(name):
     value = os.getenv(name, "").strip()
     if not value:
-        raise RuntimeError(f"Добавьте {name} в локальный .env")
+        raise RuntimeError(f"Add {name} to your local .env file")
     return value
 
 
@@ -78,7 +78,7 @@ def _wait_for_callback(server, timeout=300):
     while server.oauth_result is None and time.monotonic() < deadline:
         server.handle_request()
     if server.oauth_result is None:
-        raise RuntimeError("Время ожидания TikTok OAuth истекло")
+        raise RuntimeError("TikTok OAuth timed out")
     return server.oauth_result
 
 
@@ -86,14 +86,14 @@ def _redirect_configuration(value, requested_port):
     template = str(value or DEFAULT_REDIRECT_URI).strip()
     wildcard = ":*" in template
     if "*" in template and (not wildcard or template.count("*") != 1):
-        raise RuntimeError("TIKTOK_REDIRECT_URI содержит некорректный wildcard")
+        raise RuntimeError("TIKTOK_REDIRECT_URI contains an invalid wildcard")
 
     parseable = template.replace(":*", ":0", 1) if wildcard else template
     parsed = urlsplit(parseable)
     try:
         configured_port = parsed.port
     except ValueError as error:
-        raise RuntimeError("TIKTOK_REDIRECT_URI содержит некорректный port") from error
+        raise RuntimeError("TIKTOK_REDIRECT_URI contains an invalid port") from error
     if (
         parsed.scheme != "http"
         or parsed.hostname not in {"127.0.0.1", "localhost"}
@@ -105,15 +105,15 @@ def _redirect_configuration(value, requested_port):
         or not parsed.path.startswith("/")
     ):
         raise RuntimeError(
-            "TIKTOK_REDIRECT_URI должен быть статическим HTTP loopback URL "
-            "с port и без query/fragment"
+            "TIKTOK_REDIRECT_URI must be a static HTTP loopback URL "
+            "with a port and without a query or fragment"
         )
 
     if wildcard:
         listen_port = requested_port
     else:
         if requested_port and requested_port != configured_port:
-            raise RuntimeError("--port не совпадает с port в TIKTOK_REDIRECT_URI")
+            raise RuntimeError("--port does not match the port in TIKTOK_REDIRECT_URI")
         listen_port = configured_port
     return template, listen_port, parsed.path
 
@@ -130,7 +130,7 @@ def _runtime_db_path():
     configured = os.getenv("REELAY_DATA_DIR", "").strip()
     data_dir = Path(configured).expanduser() if configured else ROOT / "data"
     if not data_dir.is_absolute():
-        raise RuntimeError("REELAY_DATA_DIR должен быть абсолютным путём")
+        raise RuntimeError("REELAY_DATA_DIR must be an absolute path")
     return data_dir / "reelay.db"
 
 
@@ -148,16 +148,16 @@ def _exchange_code(client, client_key, client_secret, code, verifier, redirect_u
             },
         )
     except httpx.HTTPError as error:
-        raise RuntimeError("Ошибка сети во время TikTok OAuth") from error
+        raise RuntimeError("Network error during TikTok OAuth") from error
 
     try:
         payload = response.json()
     except ValueError as error:
         raise RuntimeError(
-            f"TikTok OAuth вернул некорректный ответ (HTTP {response.status_code})"
+            f"TikTok OAuth returned an invalid response (HTTP {response.status_code})"
         ) from error
     if not isinstance(payload, dict):
-        raise RuntimeError("TikTok OAuth вернул некорректный ответ")
+        raise RuntimeError("TikTok OAuth returned an invalid response")
     if response.is_error or payload.get("error"):
         error_code = _safe_message(
             payload.get("error") or f"HTTP {response.status_code}",
@@ -174,7 +174,7 @@ def _exchange_code(client, client_key, client_secret, code, verifier, redirect_u
             verifier,
         )
         detail = f": {description}" if description else ""
-        raise RuntimeError(f"TikTok OAuth отклонён ({error_code}){detail}")
+        raise RuntimeError(f"TikTok OAuth was denied ({error_code}){detail}")
 
     access_token = str(payload.get("access_token") or "").strip()
     refresh_token = str(payload.get("refresh_token") or "").strip()
@@ -183,14 +183,16 @@ def _exchange_code(client, client_key, client_secret, code, verifier, redirect_u
         scope for scope in str(payload.get("scope") or "").replace(",", " ").split() if scope
     }
     if not access_token:
-        raise RuntimeError("TikTok OAuth не вернул access token")
+        raise RuntimeError("TikTok OAuth did not return an access token")
     if not refresh_token:
-        raise RuntimeError("TikTok OAuth не вернул refresh token")
+        raise RuntimeError("TikTok OAuth did not return a refresh token")
     if not open_id:
-        raise RuntimeError("TikTok OAuth не вернул open_id")
+        raise RuntimeError("TikTok OAuth did not return an open_id")
     missing_scopes = SCOPES - granted_scopes
     if missing_scopes:
-        raise RuntimeError("TikTok не выдал scopes: " + ", ".join(sorted(missing_scopes)))
+        raise RuntimeError(
+            "TikTok did not grant these scopes: " + ", ".join(sorted(missing_scopes))
+        )
     return access_token, refresh_token, open_id
 
 
@@ -202,16 +204,16 @@ def _authorized_user(client, access_token, expected_open_id):
             headers={"Authorization": f"Bearer {access_token}"},
         )
     except httpx.HTTPError as error:
-        raise RuntimeError("Ошибка сети при проверке TikTok-аккаунта") from error
+        raise RuntimeError("Network error while verifying the TikTok account") from error
 
     try:
         payload = response.json()
     except ValueError as error:
         raise RuntimeError(
-            f"TikTok user.info вернул некорректный ответ (HTTP {response.status_code})"
+            f"TikTok user.info returned an invalid response (HTTP {response.status_code})"
         ) from error
     if not isinstance(payload, dict):
-        raise RuntimeError("TikTok user.info вернул некорректный ответ")
+        raise RuntimeError("TikTok user.info returned an invalid response")
 
     api_error = payload.get("error") or {}
     error_code = str(api_error.get("code") or "") if isinstance(api_error, dict) else ""
@@ -220,18 +222,18 @@ def _authorized_user(client, access_token, expected_open_id):
         message = _safe_message(raw_message, access_token)
         detail = f": {message}" if message else ""
         raise RuntimeError(
-            f"TikTok user.info отклонён ({error_code or f'HTTP {response.status_code}'}){detail}"
+            f"TikTok user.info was denied ({error_code or f'HTTP {response.status_code}'}){detail}"
         )
 
     user = (payload.get("data") or {}).get("user")
     if not isinstance(user, dict):
-        raise RuntimeError("TikTok user.info не вернул профиль")
+        raise RuntimeError("TikTok user.info did not return a profile")
     open_id = str(user.get("open_id") or "").strip()
     display_name = str(user.get("display_name") or "").strip()
     if not open_id or not hmac.compare_digest(open_id, expected_open_id):
-        raise RuntimeError("TikTok OAuth и user.info вернули разные аккаунты")
+        raise RuntimeError("TikTok OAuth and user.info returned different accounts")
     if not display_name:
-        raise RuntimeError("TikTok user.info не вернул имя выбранного аккаунта")
+        raise RuntimeError("TikTok user.info did not return the selected account name")
     return display_name
 
 
@@ -306,7 +308,7 @@ def persist_tiktok_credentials(
             if connection is not None:
                 connection.rollback()
             raise RuntimeError(
-                "TikTok OAuth сохранён в .env, но runtime token в SQLite не обновлён"
+                "TikTok OAuth credentials were saved to .env, but the runtime token in SQLite was not updated"
             ) from error
         finally:
             if connection is not None:
@@ -315,7 +317,7 @@ def persist_tiktok_credentials(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Получить локальный TikTok OAuth refresh token для Reelay"
+        description="Get a local TikTok OAuth refresh token for Reelay"
     )
     parser.add_argument("--expected-open-id")
     parser.add_argument("--port", type=int, default=0)
@@ -355,10 +357,10 @@ def main():
         )
     )
 
-    print("Открываю TikTok OAuth в системном браузере…")
+    print("Opening TikTok OAuth in your default browser…")
     if not webbrowser.open(authorization_url, new=1, autoraise=True):
         server.server_close()
-        raise RuntimeError("Не удалось открыть системный браузер")
+        raise RuntimeError("Could not open your default browser")
 
     try:
         result = _wait_for_callback(server, timeout=args.timeout)
@@ -367,9 +369,9 @@ def main():
     if result["error"]:
         description = _safe_message(result["error_description"])
         detail = f": {description}" if description else ""
-        raise RuntimeError(f"TikTok OAuth отклонён ({result['error']}){detail}")
+        raise RuntimeError(f"TikTok OAuth was denied ({result['error']}){detail}")
     if not result["code"]:
-        raise RuntimeError("TikTok OAuth не вернул authorization code")
+        raise RuntimeError("TikTok OAuth did not return an authorization code")
 
     with httpx.Client(timeout=30) as client:
         access_token, refresh_token, open_id = _exchange_code(
@@ -387,12 +389,12 @@ def main():
     expected = str(args.expected_open_id or "").strip()
     if expected and not hmac.compare_digest(expected, open_id):
         raise RuntimeError(
-            f"Ожидался TikTok open_id {expected}, но выбран {open_id}; .env не изменён"
+            f"Expected TikTok open_id {expected}, but selected {open_id}; .env was not changed"
         )
     if not expected:
-        confirmation = input("Сохранить OAuth для этого TikTok-аккаунта? [y/N]: ").strip()
+        confirmation = input("Save OAuth credentials for this TikTok account? [y/N]: ").strip()
         if confirmation.casefold() not in {"y", "yes", "д", "да"}:
-            raise RuntimeError("Отменено; .env не изменён")
+            raise RuntimeError("Cancelled; .env was not changed")
 
     persist_tiktok_credentials(
         refresh_token=refresh_token,
@@ -400,7 +402,7 @@ def main():
         env_path=ENV_PATH,
         db_path=_runtime_db_path(),
     )
-    print("TikTok OAuth сохранён в локальный .env. Секреты не выведены.")
+    print("TikTok OAuth credentials saved to local .env. Secrets were not printed.")
 
 
 if __name__ == "__main__":

@@ -1,223 +1,190 @@
-# Reelay: подключение Facebook, Threads, YouTube и TikTok
+# Platform configuration
 
-Все дополнительные направления выключены, пока их credentials не добавлены в локальный `.env` и не пройдена отдельная тестовая публикация.
+Reelay uses accounts and developer applications supplied by the operator. Save credentials in
+local Reelay Settings or `.env`; never put tokens, downloaded OAuth JSON, or account exports in
+issues, pull requests, screenshots, or the source tree.
 
-## 1. Facebook Page
+This guide describes the settings consumed by this implementation. Provider consoles,
+permissions, quotas, and app review requirements change; consult the linked official guides
+when creating an application. Keep an optional publisher disabled until its account is configured.
 
-Facebook Reels API публикует только в объект **Facebook Page**. Личный профиль
-`your personal Facebook profile` из Accounts Center не является Page, даже если на нём
-включён Professional mode, поэтому автоматически публиковать туда через Graph
-API нельзя. Для Reelay можно либо использовать активную Page `your Facebook Page`, либо
-переименовать/создать Page `your personal Facebook profile` и затем заменить Page ID/token.
+## Telegram and the required Instagram destination
 
-Что уже есть: Meta App `Reelay`, Page `your Facebook Page`, Page ID, App ID/Secret и текущий Page token. Не хватает права `pages_manage_posts`.
+Create a Telegram bot with [BotFather](https://core.telegram.org/bots/features#botfather) and
+configure these values:
 
-1. Откройте [Meta App Dashboard](https://developers.facebook.com/apps/) и выберите `Reelay`.
-2. Откройте **Use cases**. Добавьте или настройте use case управления контентом Facebook Page.
-3. В permissions/features добавьте `pages_manage_posts`.
-4. Откройте [Graph API Explorer](https://developers.facebook.com/tools/explorer/).
-5. Справа выберите Meta App `Reelay` и `User Token`.
-6. Добавьте permissions:
-   - `pages_show_list`
-   - `pages_read_engagement`
-   - `pages_manage_posts`
-   - `business_management`
-7. Нажмите **Generate Access Token** и подтвердите доступ к Page `your Facebook Page`.
-8. Выполните запрос:
+| Variable | Value to supply |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN` | Token issued for your bot |
+| `TELEGRAM_OWNER_ID` | Your numeric Telegram user ID, if known |
+| `TELEGRAM_OWNER_USERNAME` | Your username, without `@`, for first-time pairing when no owner ID is set |
+| `INSTAGRAM_USERNAME` | Your destination Instagram username |
+| `META_IG_USER_ID` | Instagram account ID used by the Graph API publisher |
+| `META_PAGE_ACCESS_TOKEN` | Page access token authorized for that Instagram account |
+| `META_API_VERSION` | Graph API version used by the application |
 
-   ```text
-   GET /me/accounts?fields=id,name,access_token,tasks
+The Instagram adapter uses Meta's Facebook Graph API flow and a Page access token. Configure the
+corresponding Instagram professional account, Facebook Page connection, developer app, and
+publishing permissions using Meta's documentation. The Instagram user ID and Facebook Page ID
+are distinct values. The settings panel also has fields for app and user credentials useful
+while setting up Meta; the publisher itself consumes the account ID and Page token listed above.
+
+Run Reelay and send `/start` from your configured owner's account. Once paired, the numeric owner
+ID is stored in SQLite; changing the username in `.env` does not transfer an already paired bot.
+
+Instagram is always included in the current publisher registry. There is no
+`PUBLISH_INSTAGRAM=false` mode. Keep all other `PUBLISH_*` flags `false` for the first run.
+
+Official references: [Instagram API with Facebook Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/),
+[content publishing](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/content-publishing/),
+[Meta App Dashboard](https://developers.facebook.com/apps/).
+
+## Facebook Page Reels
+
+The Facebook adapter publishes to a **Page**, using the Page's ID and access token. A personal
+profile name or ID is not the destination type implemented here.
+
+1. Choose a Page you manage and configure its publishing access in your Meta developer app.
+2. Obtain a Page access token with the permissions required by the Reels publishing flow,
+   including `pages_manage_posts`. Confirm that it is authorized for the intended Page.
+3. Set `META_PAGE_ID` and `META_PAGE_ACCESS_TOKEN` locally.
+4. Set `PUBLISH_FACEBOOK=true` and restart the bot when ready to include Facebook in the queue.
+
+Instagram and Facebook share `META_PAGE_ACCESS_TOKEN` in this implementation. Ensure the chosen
+Page token also works for the configured Instagram account before replacing it.
+
+Reference: [Facebook Reels Publishing](https://developers.facebook.com/docs/video-api/guides/reels-publishing/).
+
+## Threads
+
+Create a Threads API application, authorize the intended Threads profile, and grant the access
+required for profile identification and content publishing. For development, accept the tester
+invitation from that profile if your app setup requires it. Use the **Threads** app credentials,
+which can differ from the credentials for your Instagram/Facebook app.
+
+Configure:
+
+| Variable | Purpose |
+| --- | --- |
+| `THREADS_USER_ID` | Destination profile ID |
+| `THREADS_ACCESS_TOKEN` | Authorized token for that profile |
+| `THREADS_APP_ID`, `THREADS_APP_SECRET` | Optional setup fields for your Threads application |
+| `THREADS_API_VERSION` | Threads API version |
+| `PUBLISH_THREADS` | Set to `true` after configuration |
+
+The Threads adapter supplies a `video_url` to the API. For each upload, Reelay:
+
+1. Creates a temporary H.264/AAC MP4 for Threads.
+2. Starts a local HTTP server serving only that video.
+3. Opens a Cloudflare Quick Tunnel and passes the resulting HTTPS URL to Threads.
+4. Waits for processing, publishes the container, and closes the tunnel.
+5. Removes temporary media when the operation ends.
+
+Install `cloudflared` on `PATH` or at `data/bin/cloudflared` for a local run; the Docker image
+includes it. During processing, this one MP4 is temporarily reachable at the generated public
+HTTPS URL through Cloudflare. The tunnel does not expose the settings panel or queue database.
+
+References: [Threads getting started](https://developers.facebook.com/docs/threads/get-started),
+[access tokens and permissions](https://developers.facebook.com/docs/threads/get-started/get-access-tokens-and-permissions),
+[publishing](https://developers.facebook.com/docs/threads/posts).
+
+## YouTube
+
+The local OAuth helper authorizes a desktop app and confirms the selected channel before saving
+its refresh token. It requests `youtube.upload` and `youtube.readonly`; the latter is used to
+identify the channel.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create or select your project
+   and enable YouTube Data API v3.
+2. Configure your OAuth consent screen and any test-user access required by the project.
+3. Create an OAuth client with the **Desktop app** type.
+4. Copy `client_id` and `client_secret` from its downloaded JSON into `YOUTUBE_CLIENT_ID` and
+   `YOUTUBE_CLIENT_SECRET` in the local configuration. Keep `PUBLISH_YOUTUBE=false`.
+5. Run the helper on the computer where you can complete browser login:
+
+   ```bash
+   uv run --no-sync python -m reelay.youtube_oauth
    ```
 
-9. Убедитесь, что `your Facebook Page` возвращается с задачей `CREATE_CONTENT`.
+6. Select the intended account and confirm the displayed channel. The helper atomically saves
+   `YOUTUBE_REFRESH_TOKEN` and `YOUTUBE_CHANNEL_ID` without printing their secret values.
 
-Что передать Codex: новый **User Access Token** из шага 7. App ID, App Secret и Page ID повторно не нужны. Codex обменяет токен на long-lived и сам получит новый Page Access Token.
+If you already know the expected channel ID, require it explicitly:
 
-Официальные ссылки: [Facebook Reels Publishing](https://developers.facebook.com/docs/video-api/guides/reels-publishing/), [`pages_manage_posts`](https://developers.facebook.com/docs/permissions/reference/pages_manage_posts/), [Meta Postman collection](https://www.postman.com/meta/facebook/folder/simabyk/reels-publishing).
-
-## 2. Threads
-
-1. Убедитесь, что нужный профиль Threads создан и вы можете войти в него.
-2. Откройте [Meta App Dashboard](https://developers.facebook.com/apps/).
-3. В `Reelay` попробуйте **Add use case → Access the Threads API**. Если Meta не предлагает добавить его в существующее приложение, создайте отдельное приложение `Reelay Threads` с этим use case.
-4. Откройте **Threads API → Settings** и скопируйте именно **Threads App ID** и **Threads App Secret**. Они отличаются от обычных Meta App credentials.
-5. Откройте **Use cases → Access the Threads API → Customize → Settings**.
-6. Внизу, возле **User Token Generator**, нажмите **Add or Remove Threads Testers**.
-7. Нажмите **Add People**, выберите роль именно **Threads Tester**, введите username без `@` (`rbc_haze_harris`) и отправьте приглашение.
-8. Войдите в нужный Threads-аккаунт и откройте [Website permissions](https://www.threads.com/settings/website_permissions). На вкладке приглашений выберите приложение Reelay и нажмите **Accept**.
-9. Вернитесь в **Use cases → Access the Threads API → Customize → Settings**, обновите страницу и в **User Token Generator** нажмите **Generate Access Token** напротив `rbc_haze_harris`.
-10. Разрешите:
-   - `threads_basic`
-   - `threads_content_publish`
-
-Что передать Codex:
-
-```text
-Threads username:
-Threads App ID:
-Threads App Secret:
-Threads User Access Token:
+```bash
+uv run --no-sync python -m reelay.youtube_oauth --expected-channel-id YOUR_CHANNEL_ID
 ```
 
-Codex определит Threads User ID, обменяет токен на long-lived и сохранит его локально.
+After restarting Reelay, `/youtube ID` performs a separate **private** test upload for a job with
+local media. It does not publish that job to Instagram or consume it from the queue. It is still
+an actual API upload. The test ID is stored separately from scheduled publication checkpoints.
 
-Threads API не поддерживает загрузку локального файла: он принимает только
-публичный `video_url`. Instagram CDN оказался ненадёжным источником для Threads
-video processing. Поэтому Reelay перед каждой Threads-публикацией:
+To include YouTube in the regular queue, set `PUBLISH_YOUTUBE=true` and choose
+`YOUTUBE_PRIVACY_STATUS=private`, `unlisted`, or `public`, then restart. Start with `private`.
+The provider can restrict visibility independently of this setting. Short-form classification
+is handled by YouTube; this adapter uses the standard video upload API.
 
-1. создаёт временный MP4 H.264 + AAC-LC без edit lists;
-2. поднимает локальный сервер, отдающий только этот `video.mp4`;
-3. открывает одноразовый Cloudflare Quick Tunnel;
-4. ждёт `FINISHED`, публикует контейнер и сразу закрывает туннель;
-5. удаляет временный файл независимо от результата.
+If Google returns `invalid_grant`, repeat the local OAuth flow after checking the account's
+consent and your project's OAuth status. Move the updated YouTube settings to the deployment and
+recreate its container. Preserve credentials for the other platforms. API app reviews and OAuth
+consent requirements are separate from Reelay's local checks.
 
-Исполняемый `cloudflared` должен находиться в `data/bin/cloudflared` или в
-`PATH`. Постоянный сервер не нужен, но во время обработки один MP4 временно
-проходит через инфраструктуру Cloudflare и доступен по случайному HTTPS URL.
+References: [uploading a video](https://developers.google.com/youtube/v3/guides/uploading_a_video),
+[installed-app OAuth](https://developers.google.com/youtube/v3/guides/auth/installed-apps),
+[quota and compliance audits](https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits).
 
-Официальные ссылки: [Threads Get Started](https://developers.facebook.com/docs/threads/get-started), [Tokens and permissions](https://developers.facebook.com/docs/threads/get-started/get-access-tokens-and-permissions), [Publishing](https://developers.facebook.com/docs/threads/posts), [официальный sample](https://github.com/fbsamples/threads_api).
+## TikTok Upload to Inbox
 
-## 3. YouTube Shorts
+Reelay implements **Upload to Inbox**, not TikTok Direct Post. It uploads the local original MP4
+using `FILE_UPLOAD`, waits for `SEND_TO_USER_INBOX`, and saves the returned `publish_id`. The user
+then opens the TikTok notification, adds a caption, and publishes manually. Reelay sends the
+copyable hashtag line as a separate Telegram message after a new successful Inbox delivery.
 
-1. Создайте или выберите проект в [Google Cloud Console](https://console.cloud.google.com/projectcreate).
-2. Откройте [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) и нажмите **Enable**.
-3. Откройте **Google Auth Platform**:
-   - **Branding**: имя `Reelay`, ваш support email;
-   - **Audience**: `External`;
-   - **Test users**: добавьте Google email, которому принадлежит YouTube-канал;
-   - **Data Access**: добавьте scopes
-     `https://www.googleapis.com/auth/youtube.upload` и
-     `https://www.googleapis.com/auth/youtube.readonly`. Второй нужен только,
-     чтобы перед сохранением токена проверить название и ID выбранного канала.
-4. Откройте **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
-5. Выберите application type **Desktop app**, назовите `Reelay Local`.
-6. Скачайте JSON через **Download JSON** и скопируйте значения `client_id` и `client_secret` из секции `installed` в локальный `.env`:
-
-   ```dotenv
-   YOUTUBE_CLIENT_ID=...
-   YOUTUBE_CLIENT_SECRET=...
-   PUBLISH_YOUTUBE=false
-   ```
-
-7. Из папки проекта запустите локальный OAuth bootstrap:
-
-   ```bash
-   uv run python -m reelay.youtube_oauth
-   ```
-
-8. В системном браузере выберите нужный Google/YouTube account и нажмите **Allow**. Команда покажет имя и ID выбранного канала и попросит подтверждение. После подтверждения она атомарно сохранит `YOUTUBE_REFRESH_TOKEN` и `YOUTUBE_CHANNEL_ID` в локальный `.env`, не печатая секреты.
-9. Для строгой автоматической проверки заранее известного канала можно выполнить:
-
-   ```bash
-   uv run python -m reelay.youtube_oauth --expected-channel-id UCxxxxxxxx
-   ```
-
-10. После успешного bootstrap перезапустите Reelay и выполните в Telegram
-    `/youtube ID` для одного изолированного private-теста. Команда не публикует
-    ролик повторно в Instagram и не удаляет его из очереди.
-11. После успешного теста установите `PUBLISH_YOUTUBE=true` и снова перезапустите
-    Reelay. С этого момента общая очередь будет сохранять YouTube video ID и не
-    дублировать уже успешную загрузку при `/retry`.
-
-### Если YouTube возвращает `invalid_grant`
-
-Это означает, что Google отклонил сохранённый refresh token: он мог истечь или быть
-отозван. Для External-приложения в режиме **Testing** разрешение с YouTube scopes
-истекает через семь дней. Для постоянной работы завершите **Branding**, затем
-переведите **Audience → Publishing status** в **In production** и повторите OAuth
-bootstrap выше. Само переключение режима не восстанавливает старый токен.
-Перенесите только новые YouTube-настройки на сервер и пересоздайте контейнер;
-не перезаписывайте токены других платформ. Сначала проверьте доступ к нужному
-каналу, затем используйте `/retry ID` для незавершённых отправок.
-
-Ошибка YouTube не останавливает остальные площадки. Частично отправленный ролик
-и успешные ID сохраняются; повтор не загружает его заново в завершённые площадки.
-Режим OAuth Production и аудит публичных загрузок YouTube — разные проверки.
-См. [срок действия Google OAuth tokens](https://developers.google.com/identity/protocols/oauth2#expiration).
-
-Первый тест будет `private`. Проекты YouTube API, не прошедшие compliance audit, принудительно оставляют API-загрузки приватными. Для публичных Shorts затем заполните [YouTube API Audit and Quota Extension Form](https://support.google.com/youtube/contact/yt_api_form). В форме укажите, что приложение локально загружает только авторизованный пользователем контент в его собственный канал через `videos.insert`.
-
-Официальные ссылки: [Upload a video](https://developers.google.com/youtube/v3/guides/uploading_a_video), [`videos.insert`](https://developers.google.com/youtube/v3/docs/videos/insert), [OAuth for installed apps](https://developers.google.com/youtube/v3/guides/auth/installed-apps), [3-minute Shorts](https://support.google.com/youtube/answer/15424877), [API audit](https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits).
-
-## 4. TikTok Upload to Inbox
-
-Это отдельный [TikTok for Developers](https://developers.tiktok.com/apps/) portal, не TikTok API
-for Business. Reelay передаёт локальный MP4 через `FILE_UPLOAD`, ждёт
-`SEND_TO_USER_INBOX` и сохраняет `publish_id`. Видео ещё не опубликовано: после основного отчёта
-Reelay присылает отдельное Telegram-сообщение только с готовыми TikTok-хэштегами. Скопируйте его
-целиком, вставьте в публикацию из уведомления TikTok и вручную нажмите **Publish**.
-
-Reelay намеренно отправляет в TikTok чистый исходный MP4. Автоматический знак Reelay применяется
-только к Instagram, Facebook, Threads и YouTube: TikTok Content Sharing Guidelines запрещают
-интеграциям добавлять собственные promotional watermarks/logo в публикуемый контент.
-
-1. Войдите в [TikTok for Developers](https://developers.tiktok.com/signup/) обычным email.
-2. Откройте **Manage apps → Connect an app** и создайте приложение `Reelay`.
-3. Переключитесь в **Sandbox** и нажмите **Create Sandbox**.
-4. Добавьте продукты **Login Kit** и **Content Posting API**.
-5. Добавьте scopes:
-   - `user.info.basic`;
-   - `video.upload`.
-6. Добавьте платформу **Desktop**. В Login Kit зарегистрируйте redirect URI:
+1. Create an app in [TikTok for Developers](https://developers.tiktok.com/apps/), configure
+   Login Kit and Content Posting API, and authorize an account available to your app's current
+   environment.
+2. The local helper requests `user.info.basic` and `video.upload`. Configure the desktop login
+   redirect URI to match the helper:
 
    ```text
    http://127.0.0.1:*/callback/
    ```
 
-7. В **Sandbox settings → Target users** добавьте принадлежащий вам TikTok-аккаунт и завершите
-   вход этим аккаунтом.
-8. Сохраните Sandbox через **Apply changes**.
-9. Скопируйте Client key и Client secret в локальный `.env`, не включая publisher:
+3. Set `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET` in local settings. Keep
+   `PUBLISH_TIKTOK=false` until authorization is complete.
+4. Run:
 
-   ```dotenv
-   TIKTOK_CLIENT_KEY=...
-   TIKTOK_CLIENT_SECRET=...
-   TIKTOK_REDIRECT_URI=http://127.0.0.1:*/callback/
-   PUBLISH_TIKTOK=false
+   ```bash
+   make tiktok-oauth
    ```
 
-10. Запустите OAuth bootstrap:
+5. Complete login in the browser and confirm the displayed profile. The helper saves
+   `TIKTOK_REFRESH_TOKEN` and `TIKTOK_OPEN_ID` locally without printing secrets.
+6. For a server deployment, transfer those configuration values privately. Set
+   `PUBLISH_TIKTOK=true` and recreate the container when ready for Inbox delivery.
 
-    ```bash
-    make tiktok-oauth
-    ```
+Reelay stores rotated TikTok refresh tokens in SQLite because a running container's environment
+cannot be changed. Use Reelay Settings to update a token and synchronize its runtime state;
+editing only `.env` can leave an older SQLite override in effect.
 
-11. В системном браузере войдите в нужный TikTok, разрешите scopes и подтвердите показанный
-    профиль. Reelay атомарно сохранит `TIKTOK_REFRESH_TOKEN` и `TIKTOK_OPEN_ID`, не печатая
-    секреты.
-12. Перенесите обновлённые TikTok credentials в серверную конфигурацию, установите
-    `PUBLISH_TIKTOK=true` и пересоздайте контейнер. Обновляйте refresh token через Reelay
-    Settings или одновременно в `.env` и SQLite: runtime хранит последнюю ротацию в SQLite.
-    Следующий элемент общей очереди будет также доставлен в TikTok Inbox.
+TikTok always receives the original video without Reelay's optional added watermark. Complete
+pending Inbox shares in TikTok and observe the limits returned by the API. Sandbox access does
+not establish production approval; review and account eligibility are provider-controlled.
 
-TikTok ограничивает пользователя пятью незавершёнными Inbox shares за 24 часа. При расписании
-три раза в день лимит соблюдается, если регулярно завершать публикации в приложении.
+References: [Upload to Inbox](https://developers.tiktok.com/doc/content-posting-api-get-started-upload-content/),
+[desktop Login Kit](https://developers.tiktok.com/doc/login-kit-desktop/),
+[OAuth token management](https://developers.tiktok.com/doc/oauth-user-access-token-management/).
 
-`FILE_UPLOAD` технически не требует домена для передачи MP4. Однако Production review требует
-одобренное приложение/scope, внешний сайт, Terms и Privacy Policy; TikTok не одобряет
-private/personal/test-only приложения. Кроме того, для постоянно серверного источника TikTok
-рекомендует `PULL_FROM_URL` с проверенного HTTPS URL. Поэтому сначала проверяем Sandbox Inbox,
-а Production-доступ считаем отдельным внешним этапом, который TikTok может не одобрить.
+## Applying configuration changes
 
-Официальные ссылки: [Upload to Inbox](https://developers.tiktok.com/docs/en/content-posting-api-get-started-upload-content), [Upload endpoint](https://developers.tiktok.com/docs/en/content-posting-api-reference-upload-video), [Desktop Login Kit](https://developers.tiktok.com/docs/en/login-kit-desktop), [OAuth tokens](https://developers.tiktok.com/docs/en/oauth-user-access-token-management), [Status](https://developers.tiktok.com/docs/en/content-posting-api-reference-get-video-status), [App review](https://developers.tiktok.com/docs/en/app-review-guidelines).
+A foreground process must be restarted after `.env` changes. The local panel's restart action
+manages the macOS LaunchAgent. Docker needs a recreated container:
 
-## Ответ одним сообщением
-
-Когда шаги выполнены, пришлите:
-
-```text
-Facebook User Access Token:
-
-Threads username:
-Threads App ID:
-Threads App Secret:
-Threads User Access Token:
-
-YouTube OAuth: выполнен / не выполнен
-YouTube channel ID:
-
-TikTok Client key:
-TikTok Client secret:
-TikTok OAuth: выполнен / не выполнен
-TikTok Open ID:
+```bash
+docker compose up --detach --force-recreate reelay
 ```
+
+`docker compose restart` keeps the old environment. Keep the existing data directory so saved
+owner identity, schedule overrides, token rotations, and successful platform IDs remain available.
+Failures on one platform do not prevent attempts on the others; after fixing access, `/retry ID`
+requeues only the unfinished deliveries for that job.

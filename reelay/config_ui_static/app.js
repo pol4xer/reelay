@@ -5,49 +5,49 @@ const sections = {
   telegram: {
     badge: "TELEGRAM BOT",
     title: "Telegram",
-    description: "Кто может управлять ботом и каким токеном он подключается к Telegram.",
+    description: "Choose who can control the bot and which token connects it to Telegram.",
     icon: "➤",
     link: "https://t.me/BotFather",
   },
   instagram_meta: {
     badge: "INSTAGRAM + META",
     title: "Instagram & Meta",
-    description: "Основной Instagram-аккаунт, Graph API и доступ к исходным роликам.",
+    description: "Configure the main Instagram account, Graph API and access to source videos.",
     icon: "◎",
     link: "https://developers.facebook.com/apps/",
   },
   facebook: {
     badge: "FACEBOOK PAGE",
     title: "Facebook Page",
-    description: "Публикация Reels на связанную Facebook Page через официальный Video API.",
+    description: "Publish Reels to a linked Facebook Page through the official Video API.",
     icon: "f",
     link: "https://developers.facebook.com/docs/video-api/guides/reels-publishing/",
   },
   threads: {
     badge: "THREADS API",
     title: "Threads",
-    description: "Видео-публикации в Threads через одноразовый Cloudflare Quick Tunnel.",
+    description: "Publish videos to Threads through a temporary Cloudflare Quick Tunnel.",
     icon: "@",
     link: "https://developers.facebook.com/docs/threads/",
   },
   youtube: {
     badge: "YOUTUBE DATA API",
     title: "YouTube Shorts",
-    description: "OAuth-канал, видимость и автоматическая загрузка вертикальных Shorts.",
+    description: "Connect a channel with OAuth, set visibility and upload vertical Shorts automatically.",
     icon: "▶",
     link: "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
   },
   tiktok: {
     badge: "TIKTOK CONTENT POSTING API",
     title: "TikTok Inbox",
-    description: "Загрузка MP4 в Inbox: откройте уведомление TikTok и завершите публикацию вручную.",
+    description: "Upload MP4s to your Inbox, then open the TikTok notification to finish publishing manually.",
     icon: "♪",
     link: "https://developers.tiktok.com/docs/en/content-posting-api-get-started-upload-content",
   },
   schedule_storage: {
     badge: "AUTOMATION",
-    title: "Расписание & файлы",
-    description: "Частота публикаций, catch-up после сна, hashtags и очистка MP4.",
+    title: "Schedule & files",
+    description: "Set posting frequency, catch-up after sleep, hashtags and MP4 cleanup.",
     icon: "◷",
     link: "https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
   },
@@ -106,7 +106,7 @@ async function loadAll() {
     state.status = status;
     renderEverything();
   } catch (error) {
-    showToast("Не удалось открыть настройки", humanError(error), true);
+    showToast("Could not open settings", humanError(error), true);
   } finally {
     setTimeout(() => $("#loading-screen").classList.add("is-hidden"), 120);
   }
@@ -130,26 +130,26 @@ function renderStatus() {
   $("#service-pill").classList.toggle("is-running", running);
   $("#service-pill").classList.toggle("is-error", service.installed && !running);
   $("#service-pill-text").textContent = running
-    ? `Reelay работает · PID ${service.pid || "—"}`
+    ? `Reelay is running · PID ${service.pid || "—"}`
     : service.installed
-      ? "LaunchAgent остановлен"
-      : "LaunchAgent не установлен";
+      ? "LaunchAgent is stopped"
+      : "LaunchAgent is not installed";
 
   $("#hero-title").textContent = running
-    ? "Reelay работает автономно"
-    : "Reelay требует внимания";
+    ? "Reelay is running automatically"
+    : "Reelay needs attention";
   $("#hero-copy").textContent = running
-    ? "LaunchAgent активен. Изменения можно сохранить и применить одним перезапуском."
-    : "Проверьте конфигурацию и запустите LaunchAgent из панели или Makefile.";
+    ? "The LaunchAgent is active. Save your changes and apply them with one restart."
+    : "Check your configuration and start the LaunchAgent from this panel or the Makefile.";
   $("#metric-service").textContent = running ? "Online" : "Offline";
-  $("#metric-service-detail").textContent = service.installed ? "macOS LaunchAgent" : "не установлен";
+  $("#metric-service-detail").textContent = service.installed ? "macOS LaunchAgent" : "not installed";
   $("#metric-queued").textContent = queue.available ? String(byStatus.queued ?? 0) : "—";
-  $("#metric-queue-detail").textContent = queue.paused ? "очередь на паузе" : "видео ожидают";
+  $("#metric-queue-detail").textContent = queue.paused ? "queue paused" : "videos waiting";
   $("#metric-published").textContent = queue.available ? String(byStatus.published ?? 0) : "—";
-  $("#metric-config").textContent = config.valid ? "Готово" : "Проверить";
+  $("#metric-config").textContent = config.valid ? "Ready" : "Review";
   $("#metric-config-detail").textContent = config.valid
-    ? "обязательные поля заполнены"
-    : `${Object.keys(config.errors || {}).length} полей требуют внимания`;
+    ? "required fields complete"
+    : `${Object.keys(config.errors || {}).length} fields need attention`;
 
   const platformList = $("#platform-list");
   platformList.replaceChildren();
@@ -161,7 +161,7 @@ function renderStatus() {
     const logo = element("span", "platform-logo", presentation.logo);
     const copy = document.createElement("span");
     copy.append(element("strong", "", presentation.name));
-    copy.append(element("small", "", enabled ? "Включено в общий pipeline" : "Публикация выключена"));
+    copy.append(element("small", "", enabled ? "Enabled for queued publishing" : "Publishing disabled"));
     const badge = element("span", `platform-badge${enabled ? " is-on" : ""}`, enabled ? "Active" : "Off");
     row.append(logo, copy, badge);
     platformList.append(row);
@@ -187,7 +187,7 @@ function showSection(section) {
   $("#overview-panel").hidden = !overview;
   $("#settings-panel").hidden = overview;
   if (overview) {
-    setPageHeader("REELAY SETTINGS", "Обзор", "Состояние сервиса, очереди и всех подключённых платформ.");
+    setPageHeader("REELAY SETTINGS", "Overview", "Status of your service, queue and connected platforms.");
     return;
   }
 
@@ -227,13 +227,13 @@ function buildField(field) {
   label.htmlFor = `field-${field.key}`;
   if (isFieldRequired(field)) label.append(element("span", "required-mark", " ·"));
   top.append(label);
-  if (field.secret && state.configured[field.key]) top.append(element("span", "configured-badge", "Сохранено"));
+  if (field.secret && state.configured[field.key]) top.append(element("span", "configured-badge", "Saved"));
   textBlock.append(top);
 
   const help = element("p", "field-help", field.help || "");
   if (field.link) {
     help.append(" ");
-    const anchor = element("a", "", "Инструкция ↗");
+    const anchor = element("a", "", "Instructions ↗");
     anchor.href = field.link;
     anchor.target = "_blank";
     anchor.rel = "noreferrer";
@@ -267,7 +267,7 @@ function buildField(field) {
       control.type = field.secret ? "password" : ({ number: "number", time: "time" }[field.type] || "text");
       control.value = field.secret ? (state.drafts[field.key] || "") : (draftValue(field) ?? field.default ?? "");
       control.placeholder = field.secret && state.configured[field.key]
-        ? "Сохранено — введите только для замены"
+        ? "Saved — enter a value only to replace it"
         : (field.placeholder || "");
       if (field.type === "number") control.inputMode = "numeric";
     }
@@ -277,7 +277,7 @@ function buildField(field) {
     if (field.secret) {
       const reveal = element("button", "reveal-button", "◉");
       reveal.type = "button";
-      reveal.title = "Показать или скрыть значение";
+      reveal.title = "Show or hide this value";
       reveal.addEventListener("click", () => {
         control.type = control.type === "password" ? "text" : "password";
       });
@@ -342,8 +342,8 @@ function draftValue(field) {
 function updateSaveBar() {
   const dirty = state.dirty.size > 0;
   $("#save-bar").classList.toggle("is-dirty", dirty);
-  $("#save-title").textContent = dirty ? `${state.dirty.size} несохранённых изменений` : "Нет изменений";
-  $("#save-copy").textContent = dirty ? "Сохраните или отмените изменения" : "Все настройки сохранены";
+  $("#save-title").textContent = dirty ? `${state.dirty.size} unsaved changes` : "No changes";
+  $("#save-copy").textContent = dirty ? "Save or discard your changes" : "All settings saved";
   for (const button of [$("#discard-button"), $("#save-button"), $("#save-restart-button"), $("#header-save-button")]) {
     button.disabled = !dirty || state.saving;
   }
@@ -379,11 +379,11 @@ async function saveConfig(restart) {
     state.status = await api("/api/status");
     renderEverything();
     const restartResult = result.restart || {};
-    if (restart && !restartResult.ok) showToast("Настройки сохранены", restartResult.message || "Сервис нужно перезапустить позже.", true);
-    else showToast("Готово", restart ? "Настройки сохранены, Reelay перезапущен." : "Настройки сохранены локально.");
+    if (restart && !restartResult.ok) showToast("Settings saved", restartResult.message || "Restart the service later to apply your settings.", true);
+    else showToast("Ready", restart ? "Settings saved and Reelay restarted." : "Settings saved locally.");
   } catch (error) {
     if (error.payload?.errors) applyErrors(error.payload.errors);
-    showToast("Не удалось сохранить", humanError(error), true);
+    showToast("Could not save settings", humanError(error), true);
   } finally {
     state.saving = false;
     updateSaveBar();
@@ -409,10 +409,10 @@ function applyErrors(errors) {
 function humanError(error) {
   const code = error?.payload?.error || error?.message || "unknown_error";
   const translations = {
-    invalid_api_token: "Сессия панели устарела. Перезапустите Config UI.",
-    validation_failed: "Проверьте отмеченные поля.",
-    config_write_failed: "Не удалось записать локальный .env.",
-    Failed_to_fetch: "Локальный сервер настроек недоступен.",
+    invalid_api_token: "Your settings session has expired. Restart the settings panel.",
+    validation_failed: "Check the highlighted fields.",
+    config_write_failed: "Could not write the local .env file.",
+    Failed_to_fetch: "The local settings server is unavailable.",
   };
   return translations[code] || String(code).replaceAll("_", " ");
 }
@@ -444,9 +444,9 @@ $("#refresh-button").addEventListener("click", async () => {
   try {
     state.status = await api("/api/status");
     renderStatus();
-    showToast("Обновлено", "Статус сервиса и очереди перечитан.");
+    showToast("Refreshed", "Service and queue status refreshed.");
   } catch (error) {
-    showToast("Ошибка обновления", humanError(error), true);
+    showToast("Could not refresh status", humanError(error), true);
   }
 });
 $("#discard-button").addEventListener("click", discardChanges);

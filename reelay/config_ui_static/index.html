@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,7 +11,7 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar" aria-label="Разделы настроек">
+    <aside class="sidebar" aria-label="Settings sections">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">R</div>
         <div>
@@ -22,18 +22,18 @@
 
       <div class="service-pill" id="service-pill">
         <span class="status-dot"></span>
-        <span id="service-pill-text">Проверяем сервис…</span>
+        <span id="service-pill-text">Checking service…</span>
       </div>
 
       <nav class="nav-list" id="navigation">
-        <button class="nav-item is-active" data-section="overview" aria-label="Обзор">
-          <span class="nav-icon">⌂</span><span>Обзор</span>
+        <button class="nav-item is-active" data-section="overview" aria-label="Overview">
+          <span class="nav-icon">⌂</span><span>Overview</span>
         </button>
-        <p class="nav-caption">Подключения</p>
+        <p class="nav-caption">Connections</p>
         <button class="nav-item" data-section="telegram" aria-label="Telegram">
           <span class="nav-icon">➤</span><span>Telegram</span><span class="nav-state"></span>
         </button>
-        <button class="nav-item" data-section="instagram_meta" aria-label="Instagram и Meta">
+        <button class="nav-item" data-section="instagram_meta" aria-label="Instagram and Meta">
           <span class="nav-icon">◎</span><span>Instagram & Meta</span><span class="nav-state"></span>
         </button>
         <button class="nav-item" data-section="facebook" aria-label="Facebook Page">
@@ -48,15 +48,15 @@
         <button class="nav-item" data-section="tiktok" aria-label="TikTok Inbox">
           <span class="nav-icon">♪</span><span>TikTok Inbox</span><span class="nav-state"></span>
         </button>
-        <p class="nav-caption">Автоматизация</p>
-        <button class="nav-item" data-section="schedule_storage" aria-label="Расписание">
-          <span class="nav-icon">◷</span><span>Расписание</span><span class="nav-state"></span>
+        <p class="nav-caption">Automation</p>
+        <button class="nav-item" data-section="schedule_storage" aria-label="Schedule">
+          <span class="nav-icon">◷</span><span>Schedule</span><span class="nav-state"></span>
         </button>
       </nav>
 
       <div class="sidebar-footer">
-        <span>Локальная панель</span>
-        <small>127.0.0.1 · секреты не покидают Mac</small>
+        <span>Local control panel</span>
+        <small>127.0.0.1 · settings stored locally</small>
       </div>
     </aside>
 
@@ -64,13 +64,13 @@
       <header class="page-header">
         <div>
           <p class="eyebrow" id="page-eyebrow">REELAY SETTINGS</p>
-          <h1 id="page-title">Обзор</h1>
-          <p id="page-description">Состояние сервиса, очереди и всех подключённых платформ.</p>
+          <h1 id="page-title">Overview</h1>
+          <p id="page-description">Status of your service, queue and connected platforms.</p>
         </div>
         <div class="header-actions">
-          <button class="button button-ghost" id="refresh-button" type="button">Обновить</button>
+          <button class="button button-ghost" id="refresh-button" type="button">Refresh</button>
           <button class="button button-primary desktop-save" id="header-save-button" type="button" disabled>
-            Сохранить
+            Save
           </button>
         </div>
       </header>
@@ -79,8 +79,8 @@
         <div class="hero-card">
           <div>
             <span class="hero-kicker">AUTOMATION STATUS</span>
-            <h2 id="hero-title">Загружаем состояние…</h2>
-            <p id="hero-copy">Проверяем LaunchAgent и локальную очередь.</p>
+            <h2 id="hero-title">Loading status…</h2>
+            <p id="hero-copy">Checking the LaunchAgent and local queue.</p>
           </div>
           <div class="hero-orbit" aria-hidden="true">
             <div class="orbit-core">R</div>
@@ -92,24 +92,24 @@
 
         <div class="metrics-grid">
           <article class="metric-card">
-            <span class="metric-label">Сервис</span>
+            <span class="metric-label">Service</span>
             <strong id="metric-service">—</strong>
             <small id="metric-service-detail">LaunchAgent</small>
           </article>
           <article class="metric-card">
-            <span class="metric-label">В очереди</span>
+            <span class="metric-label">Queued</span>
             <strong id="metric-queued">—</strong>
-            <small id="metric-queue-detail">видео ожидают</small>
+            <small id="metric-queue-detail">videos waiting</small>
           </article>
           <article class="metric-card">
-            <span class="metric-label">Опубликовано</span>
+            <span class="metric-label">Published</span>
             <strong id="metric-published">—</strong>
-            <small>завершённых заданий</small>
+            <small>completed jobs</small>
           </article>
           <article class="metric-card">
-            <span class="metric-label">Конфигурация</span>
+            <span class="metric-label">Configuration</span>
             <strong id="metric-config">—</strong>
-            <small id="metric-config-detail">проверка полей</small>
+            <small id="metric-config-detail">checking fields</small>
           </article>
         </div>
 
@@ -118,7 +118,7 @@
             <div class="card-heading">
               <div>
                 <span class="card-kicker">PLATFORMS</span>
-                <h3>Куда публикуем</h3>
+                <h3>Publishing destinations</h3>
               </div>
             </div>
             <div class="platform-list" id="platform-list"></div>
@@ -128,13 +128,13 @@
             <div class="card-heading">
               <div>
                 <span class="card-kicker">QUICK START</span>
-                <h3>Как настроить</h3>
+                <h3>Get set up</h3>
               </div>
             </div>
             <ol class="steps-list">
-              <li><span>1</span><div><strong>Заполните доступы</strong><p>Каждая платформа находится в отдельной вкладке.</p></div></li>
-              <li><span>2</span><div><strong>Проверьте расписание</strong><p>Количество слотов и время применятся после restart.</p></div></li>
-              <li><span>3</span><div><strong>Сохраните и перезапустите</strong><p>Reelay подхватит новые переменные автоматически.</p></div></li>
+              <li><span>1</span><div><strong>Add credentials</strong><p>Each platform has its own settings tab.</p></div></li>
+              <li><span>2</span><div><strong>Check the schedule</strong><p>Posting times and slot counts take effect after a restart.</p></div></li>
+              <li><span>3</span><div><strong>Save and restart</strong><p>Reelay loads your updated settings automatically.</p></div></li>
             </ol>
           </article>
         </div>
@@ -145,11 +145,11 @@
           <div class="section-banner-icon" id="section-icon">●</div>
           <div>
             <span id="section-badge">PLATFORM</span>
-            <h2 id="section-title">Настройки</h2>
-            <p id="section-help">Заполните необходимые значения.</p>
+            <h2 id="section-title">Settings</h2>
+            <p id="section-help">Enter the required values.</p>
           </div>
           <a id="section-link" class="docs-link" href="#" target="_blank" rel="noreferrer" hidden>
-            Открыть документацию ↗
+            Open documentation ↗
           </a>
         </div>
 
@@ -163,20 +163,20 @@
   <div class="save-bar" id="save-bar" aria-live="polite">
     <div class="save-state">
       <span class="save-dot"></span>
-      <div><strong id="save-title">Нет изменений</strong><small id="save-copy">Все настройки сохранены</small></div>
+      <div><strong id="save-title">No changes</strong><small id="save-copy">All settings saved</small></div>
     </div>
     <div class="save-actions">
-      <button class="button button-ghost" id="discard-button" type="button" disabled>Отменить</button>
-      <button class="button button-secondary" id="save-button" type="button" disabled>Сохранить</button>
-      <button class="button button-primary" id="save-restart-button" type="button" disabled>Сохранить и перезапустить</button>
+      <button class="button button-ghost" id="discard-button" type="button" disabled>Discard</button>
+      <button class="button button-secondary" id="save-button" type="button" disabled>Save</button>
+      <button class="button button-primary" id="save-restart-button" type="button" disabled>Save and restart</button>
     </div>
   </div>
 
   <div class="toast-stack" id="toast-stack" aria-live="assertive"></div>
   <div class="loading-screen" id="loading-screen">
     <div class="loading-logo">R</div>
-    <strong>Открываем Reelay Settings</strong>
-    <span>Читаем локальную конфигурацию…</span>
+    <strong>Opening Reelay Settings</strong>
+    <span>Reading local configuration…</span>
   </div>
 </body>
 </html>

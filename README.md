@@ -1,204 +1,178 @@
 # Reelay
 
-Локальный Telegram-бот: скачивает Instagram-видео, кладёт их в FIFO-очередь и публикует Reels по расписанию через официальный Meta API.
+[![CI](https://github.com/pol4xer/reelay/actions/workflows/ci.yml/badge.svg)](https://github.com/pol4xer/reelay/actions/workflows/ci.yml)
 
-## Установка и ручной запуск
+**A self-hosted Telegram queue for scheduled short-form video publishing.**
+
+Send an Instagram video link to your bot, add a caption, and let Reelay prepare the MP4 and
+publish it on your schedule. Instagram Reels is the primary destination; Facebook Reels,
+Threads, YouTube, and TikTok Inbox can be enabled independently.
+
+Built with **Python 3.13**, **asyncio**, **python-telegram-bot**, **SQLite**, **FFmpeg**, and
+**yt-dlp**. Runs on macOS or in a Linux Docker container. This repository contains the application
+and its deployment tooling; each operator supplies their own accounts and credentials.
+
+![Reelay's English settings panel](docs/images/reelay-settings.png)
+
+*Local settings panel with example configuration and an empty queue. No account credentials are shown.*
+
+## Reference channels
+
+Public channels associated with this project:
+
+- [Instagram](https://www.instagram.com/rbc_haze_harris/)
+- [YouTube](https://www.youtube.com/channel/UCyvzAoRPo7TaVB8N7LJkIJA)
+- [TikTok](https://www.tiktok.com/@rbc_haze_harris)
+- [Facebook](https://www.facebook.com/profile.php?id=61572320376278)
+- [Threads](https://www.threads.com/@rbc_haze_harris)
+
+## What it does
+
+- **Telegram as the control surface:** add links and captions, inspect the queue, retrieve an MP4,
+  publish the next item, pause, resume, or retry a failed job.
+- **Persistent scheduling:** choose 1–12 exact daily times or distribute posts across a time
+  window. Schedule changes survive restarts; missed slots have a bounded catch-up window.
+- **Video preparation:** preserve the full frame on a 1080×1920 blurred canvas for non-vertical
+  videos, generate hashtags, and optionally cache a subtle Reelay watermark.
+- **Independent publishing:** attempt every enabled destination, preserve successful platform
+  IDs, and report partial failures together. Retries skip destinations with saved completion IDs.
+- **Local settings panel:** configure accounts and scheduling in a browser, with write-only
+  credential fields and atomic `.env` updates.
+- **Operational tooling:** process locks, queue audits, macOS LaunchAgent management, and a
+  non-root Docker image with persistent data and rotated logs.
+
+| Destination | Reelay's delivery behavior |
+| --- | --- |
+| Instagram Reels | Resumable upload, processing check, then publication through Meta Graph API |
+| Facebook Reels | Upload and publish to a Facebook Page |
+| Threads | Prepare a compatible MP4 and temporarily expose that file through a Cloudflare Quick Tunnel |
+| YouTube | Upload to the authorized channel; visibility defaults to `private` |
+| TikTok Inbox | Upload the original MP4 to the user's Inbox; finish the caption and publish manually in TikTok |
+
+Only Instagram is enabled by default. TikTok Inbox delivery is **not a public TikTok post**.
+Its follow-up Telegram message contains a copyable hashtag line.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    TG[Telegram commands] --> DL[Download and normalize MP4]
+    DL --> DB[(SQLite queue and checkpoints)]
+    SCH[Persistent schedule] --> PUB[Publishing service]
+    TG --> PUB
+    DB <--> PUB
+    PUB --> MEDIA[Platform-specific media]
+    MEDIA --> REG[Publisher registry]
+    REG --> IG[Instagram]
+    REG --> FB[Facebook]
+    REG --> TH[Threads]
+    REG --> YT[YouTube]
+    REG --> TT[TikTok Inbox]
+```
+
+The Telegram handlers, scheduling, queue orchestration, and upload adapters have separate
+responsibilities. Publishers implement a shared `PublishRequest → PublishResult` contract, so
+the service can validate results and persist a checkpoint immediately after each delivery.
+
+**Reliability decisions:** SQLite WAL stores jobs, runtime settings, and publication attempts;
+an atomic job claim and an asyncio lock coordinate scheduled and manual publication. A process
+lock prevents two instances from sharing one queue. Interrupted jobs are recovered on startup,
+and media is retained after partial failure. A job is completed only after every required
+destination has a saved ID.
+
+This is checkpoint-based retry handling, not an exactly-once guarantee across external APIs.
+If a platform accepts a video but its ID cannot be saved, further uploads stop and the report
+asks the operator to reconcile that platform before retrying.
+
+## Run locally
+
+You need Python 3.13+, [uv](https://docs.astral.sh/uv/), and FFmpeg/ffprobe on `PATH`. Install
+`cloudflared` if you enable Threads. Apple Vision tagging additionally uses the macOS command-line
+developer tools; when Vision is unavailable, tagging falls back to captions and source metadata.
 
 ```bash
+git clone https://github.com/pol4xer/reelay.git
+cd reelay
 make install
-make run
-```
-
-При первом запуске владелец с Telegram username из `TELEGRAM_OWNER_USERNAME` отправляет `/start`; бот сохраняет numeric user ID и после этого игнорирует остальных.
-
-Формат добавления:
-
-```text
-https://www.instagram.com/reel/SHORTCODE/
-Необязательный caption — все строки после URL используются в публикации.
-```
-
-После ссылки бот ждёт одно следующее текстовое сообщение и использует его как caption. Если следующим сообщением приходит новая Instagram-ссылка, это считается новым видео.
-
-Обычный текст и emoji в caption сохраняются, а хэштеги переносятся в отдельную строку.
-`#Reelay` всегда стоит первым. Instagram, Facebook, Threads и YouTube получают все уникальные
-хэштеги. После доставки в TikTok Inbox бот присылает отдельным следующим Telegram-сообщением
-только готовую строку из не более чем пяти хэштегов, включая `#Reelay`, чтобы её можно было
-скопировать целиком.
-
-Видео не формата 9:16 помещаются целиком на холст 1080×1920 с размытым фоном. Бот создаёт случайно от 15 до 20 тегов: сначала исходные и точные тематические, затем соседние по теме и несколько широких охватных. Идея определяется по caption, исходному описанию, тексту и объектам в кадрах через Apple Vision.
-
-Команда `/times 13:00 18:30 21:30` задаёт от 1 до 12 уникальных точных слотов в
-хронологическом порядке. Они сохраняются в SQLite и имеют приоритет над `POSTS_PER_DAY` и
-окном публикации. Без аргументов `/times` показывает активный точный режим. Переменная
-`POST_TIMES=13:00,18:30,21:30` служит fallback до первого runtime-изменения.
-
-Команда `/posts N` меняет количество ежедневных публикаций от 1 до 12, очищает точный override
-и равномерно распределяет слоты между `POST_WINDOW_START` и `POST_WINDOW_END`. Без аргумента
-`/posts` показывает фактически активное расписание.
-
-Нативная кнопка `Menu` в Telegram показывает список команд с краткими описаниями. `/help` присылает полную памятку и текущее расписание.
-
-При `ALLOW_PRIVATE_SOURCES=false` бот не читает cookies Chrome. Недоступные, закрытые и удалённые публикации удаляются из очереди с коротким сообщением `Пропущено: #ID`.
-
-Facebook Page, Threads, YouTube и TikTok Inbox publishers подключены к общей очереди, но по
-умолчанию выключены. Ошибка отдельной платформы не останавливает отправки в остальные:
-бот завершает все попытки и присылает общий отчёт с успешными ID и всеми ошибками.
-Каждый внешний ID сохраняется сразу; `/retry ID` повторяет только незавершённые отправки
-и не дублирует успешные. При частичном успехе локальные видео сохраняются для повтора.
-После новой успешной доставки в TikTok хэштеги приходят отдельным сообщением, даже если
-другая платформа упала; повтор только для других платформ не присылает их снова.
-TikTok Upload-to-Inbox доставляет
-черновик и уведомление; caption нужно добавить и опубликовать вручную в TikTok. Настройка
-credentials: [`docs/CROSSPOSTING_SETUP.md`](docs/CROSSPOSTING_SETUP.md).
-
-При `VIDEO_WATERMARK_ENABLED=true` Reelay один раз создаёт рядом с оригиналом кэшированный
-MP4 с маленьким полупрозрачным логотипом Reelay в верхнем левом углу. Этот derivative повторно используется
-для Instagram, Facebook, Threads и YouTube, включая `/retry`. TikTok всегда получает чистый
-оригинал без клиентского watermark согласно Content Sharing Guidelines. После успешной публикации
-`DELETE_AFTER_PUBLISH=true` удаляет всю папку задания вместе с обоими файлами.
-
-Команды: `/help`, `/status`, `/queue`, `/file ID`, `/drop ID`, `/retry ID`, `/now`,
-`/times [HH:MM ...]`, `/posts [N]`, `/pause`, `/resume`.
-
-## Структура приложения
-
-Код разделён по одной ответственности:
-
-- `reelay/app.py` — сборка приложения и зависимостей;
-- `reelay/bot.py` — только Telegram UI и команды;
-- `reelay/downloader.py` — получение и нормализация Instagram MP4;
-- `reelay/publishers/` — отдельный uploader для Instagram, Facebook, Threads, YouTube и TikTok;
-- `reelay/publishers/contract.py` — единый строгий `PublishRequest → PublishResult`;
-- `reelay/services/publishing.py` — очередь, порядок платформ и checkpoints;
-- `reelay/scheduler.py` — только расчёт времени и запуск publishing service;
-- `reelay/media/` — подготовка платформо-специфичного видео;
-- `reelay/transports/` — временный Cloudflare Quick Tunnel;
-- `reelay/db.py` — SQLite persistence и журнал publish attempts.
-
-Статус `published` выставляется только после сохранения ID всех включённых платформ. Если процесс
-прервался, незавершённое задание возвращается в очередь при следующем старте.
-
-## Форматирование и проверки
-
-```bash
-make format
-make check
-make queue-audit
-```
-
-`make format` применяет Ruff ко всему Python-коду. `make test` запускает unit/integration smoke
-tests. `make check` проверяет lint, форматирование, компилируемость Python, тесты, shell script и
-LaunchAgent plist; type-check не запускается.
-`make queue-audit` сверяет SQLite checkpoints, наличие файлов и ffprobe metadata всех ожидающих
-MP4.
-
-## Панель настроек
-
-Вместо ручного редактирования `.env` можно открыть локальную панель:
-
-```bash
+cp .env.example .env
 make config-ui
 ```
 
-На macOS также можно дважды нажать `Reelay Settings.command` в папке проекта. Панель открывается
-на `http://127.0.0.1:8765`, разделяет Telegram, Instagram/Meta, Facebook, Threads, YouTube,
-TikTok и расписание по отдельным вкладкам, показывает подсказки и официальные ссылки. Секреты не
-возвращаются из backend в браузер: UI видит только факт, что поле уже заполнено.
-
-Кнопка «Сохранить» атомарно обновляет локальный `.env`. «Сохранить и перезапустить» применяет
-конфигурацию к LaunchAgent; если в этот момент идёт скачивание или публикация, restart будет
-отложен с понятной ошибкой, а сохранённые значения останутся на диске.
-
-## Автозапуск на macOS
-
-Reelay может работать как пользовательский macOS LaunchAgent и не зависит от запущенного
-Terminal, Codex или ChatGPT:
+The settings panel opens at `http://127.0.0.1:8765` and can run before the bot is configured.
+Fill in your Telegram bot token, owner identity, Instagram username, Instagram user ID, and Meta
+Page access token. The environment variables and account setup are described in
+[the integration guide](docs/CROSSPOSTING_SETUP.md). Set your timezone and publication schedule
+before adding videos. You can also edit the local `.env` file directly.
 
 ```bash
-make service-install
-make service-status
+make run
 ```
 
-`service-install` создаёт `~/Library/LaunchAgents/com.pol4xer.reelay.plist`, запускает Reelay
-с помощью `.venv/bin/python -m reelay` и включает:
+Send `/start` to your bot from the configured owner's Telegram account. You can set
+`TELEGRAM_OWNER_ID` explicitly or use `TELEGRAM_OWNER_USERNAME` for first-time pairing; the bot
+then persists the numeric owner ID and restricts commands to that account.
 
-- запуск после входа пользователя в macOS;
-- автоматический перезапуск процесса через `KeepAlive`;
-- продолжение работы после выхода из Codex;
-- запись stdout в `data/logs/reelay.log`, stderr — в `data/logs/reelay.error.log`.
+Add a video and optional caption in one message:
 
-Управление процессом:
+```text
+https://www.instagram.com/reel/SHORTCODE/
+A caption for this video.
+```
+
+You can also send the caption as the next text message. A new Instagram link creates a new
+queue item. Use content you own or have permission to republish.
+
+| Command | Purpose |
+| --- | --- |
+| `/help`, `/status`, `/queue` | Show instructions, service state, and queued jobs |
+| `/times 13:00 18:30 21:30` | Set exact daily publication times |
+| `/posts 3` | Switch to three evenly spaced daily posts in the configured window |
+| `/now` | Publish the next queued item to enabled destinations |
+| `/pause`, `/resume` | Pause or resume publication |
+| `/file ID`, `/drop ID`, `/retry ID` | Retrieve media, remove a job, or requeue a failed job |
+| `/youtube ID` | Make a separate private YouTube test upload without consuming the queue item |
+
+## Deployment and development
+
+- [Local operations and development](docs/DEVELOPMENT.md): scheduling behavior, settings panel,
+  macOS service, queue maintenance, and verification commands.
+- [Platform configuration](docs/CROSSPOSTING_SETUP.md): required settings and local OAuth helpers.
+- [Docker deployment](deploy/docker/README.md): first installation, persistent storage, migration,
+  and private backup handling.
 
 ```bash
-make service-start
-make service-stop
-make service-status
-make service-uninstall
+make test       # Local unit and integration tests
+make check      # Repository checks; see the development guide for tool requirements
 ```
 
-Reelay держит process lock в `data/reelay.lock`, поэтому второй ручной или системный экземпляр
-не сможет одновременно менять очередь и создавать дубли. `service-start` также отказывается
-прерывать задание со статусом `publishing`. Файл `.env` остаётся в корне проекта и не копируется
-в LaunchAgent.
+Tests exercise partial failures, retries, checkpoint handling, captions, watermark routing,
+scheduling notifications, and YouTube authorization behavior. They use local fixtures and
+substituted publishers; passing tests does not verify your live platform credentials or access.
 
-При закрытой крышке Mac обычно засыпает, поэтому Reelay не исполняется до пробуждения. После
-пробуждения уже запущенный процесс продолжит работу; после перезагрузки LaunchAgent стартует при
-следующем входе пользователя. APScheduler догоняет слот только в течение
-`SCHEDULE_GRACE_MINUTES` (по умолчанию 30 минут); более старый пропуск не создаёт несколько
-публикаций подряд.
+For a code walkthrough, start with these modules:
 
-При холодном старте Reelay отдельно проверяет последний слот: если он был не больше
-`SCHEDULE_GRACE_MINUTES` назад и в журнале нет попытки, создаётся ровно один catch-up запуск.
+| Code | Responsibility |
+| --- | --- |
+| [`reelay/app.py`](reelay/app.py) | Dependency assembly and startup recovery |
+| [`reelay/services/publishing.py`](reelay/services/publishing.py) | Queue orchestration, platform isolation, and checkpoints |
+| [`reelay/publishers/`](reelay/publishers/) | Typed publisher contract, registry, and platform adapters |
+| [`reelay/db.py`](reelay/db.py) | SQLite persistence, state transitions, and attempt history |
+| [`reelay/scheduler.py`](reelay/scheduler.py) | Time slots and bounded catch-up |
+| [`reelay/downloader.py`](reelay/downloader.py), [`reelay/media/`](reelay/media/) | Downloads, normalization, and cached derivatives |
+| [`reelay/config_ui.py`](reelay/config_ui.py) | Loopback settings server and atomic configuration writes |
+| [`tests/`](tests/) | Failure-path and media behavior coverage |
 
-LaunchAgent относится только к локальному macOS-запуску. Серверный деплой позднее сможет
-использовать тот же стабильный entrypoint `python -m reelay`, не меняя код приложения.
+## Scope and private data
 
-## Проверка Linux-сервера
+Reelay is a single-owner, single-instance application. It is not a multi-tenant service. Run
+one process against a local/block-backed data directory; macOS sleep pauses local operation.
+Platform permissions, quotas, review requirements, token expiry, and source availability can
+affect publishing. Instagram is required by the current application configuration.
 
-Перед серверным деплоем передайте владельцу только `scripts/server-preflight.sh`. Скрипт ничего
-не устанавливает, не читает credentials и удаляет созданные временные файлы. Запуск:
+The repository excludes credentials, OAuth files, browser cookies, SQLite databases, downloaded
+media, logs, local editor settings, and generated deployment bundles. Configure those locally;
+`.env.example` is the public template.
 
-```bash
-chmod +x server-preflight.sh
-./server-preflight.sh | tee reelay-server-report.txt
-```
-
-Файл `reelay-server-report.txt` содержит ОС, архитектуру, доступные CPU/RAM/диск, SSH-контекст,
-systemd/Docker/tooling, проверку SQLite WAL и доступность всех необходимых DNS/HTTPS endpoint'ов.
-По умолчанию проверяется будущий runtime-путь `/opt/reelay/data`; другой абсолютный путь можно
-передать единственным аргументом скрипта.
-
-## Docker
-
-Linux-контейнер включает Python 3.13, frozen dependencies, FFmpeg/ffprobe и multi-arch
-`cloudflared`. Запуск из `/opt/reelay`:
-
-```bash
-sudo install -d -o 10001 -g 10001 -m 0700 /opt/reelay/data
-docker compose up --detach --build
-docker compose logs --follow --tail=100 reelay
-```
-
-Compose монтирует `./data` в `/app/data`, автоматически перезапускает контейнер и не открывает
-входящие порты. Nginx и TLS для основного бота не требуются: Telegram использует long polling,
-публикации идут исходящими HTTPS-запросами, Threads получает одноразовый HTTPS Quick Tunnel, а
-TikTok Inbox принимает локальный MP4 через официальный upload URL.
-Подробности и перенос существующей очереди: [`deploy/docker/README.md`](deploy/docker/README.md).
-
-Один полный архив с кодом, `.env`, SQLite и всеми ожидающими MP4 создаётся командой:
-
-```bash
-make server-bundle
-```
-
-Перед созданием архива локальный Reelay нужно остановить (`make service-stop`). Сборщик
-дополнительно проверяет process lock и откажется делать потенциально расходящийся снимок.
-
-На подготовленном Linux-сервере с запущенным Docker Engine, Docker Compose v2,
-`sha256sum`, `mktemp` и `unzip` достаточно одной строки (подставьте SHA-256, который
-напечатает сборщик и который будет указан рядом с готовым архивом):
-
-```bash
-echo 'SHA256  Reelay-All-In-One.zip' | sha256sum --check && (d="$(mktemp -d)" && trap 'rm -rf "$d"' EXIT && unzip -q Reelay-All-In-One.zip -d "$d" && sudo bash "$d/reelay-server/deploy/docker/install.sh")
-```
+**`make server-bundle` creates a PRIVATE migration backup containing `.env`, the database, and
+media. It must never be committed, attached to a GitHub Release, or shared as a public download.**
+Use the public source repository for code distribution.

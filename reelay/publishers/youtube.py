@@ -20,7 +20,7 @@ class YouTubePublisher:
         video_path = request.video_path
         duration = await asyncio.to_thread(self._duration, video_path)
         if duration > 180.0:
-            raise RuntimeError(f"YouTube Short длиннее 3 минут: {duration:.1f} сек")
+            raise RuntimeError(f"YouTube Short exceeds 3 minutes: {duration:.1f} seconds")
         file_size = video_path.stat().st_size
         timeout = httpx.Timeout(300.0, connect=30.0)
 
@@ -151,9 +151,9 @@ class YouTubePublisher:
                 payload = {}
             if isinstance(payload, dict) and payload.get("error") == "invalid_grant":
                 raise RuntimeError(
-                    "invalid_grant: Google отклонил сохранённое разрешение YouTube "
-                    "(срок истёк или доступ отозван). Повторно подключите YouTube через OAuth. "
-                    "Если приложение в режиме Testing, сначала переведите его в In production: "
+                    "invalid_grant: Google rejected the saved YouTube authorization "
+                    "(expired or revoked). Reconnect YouTube through OAuth. "
+                    "If the app is in Testing mode, first switch it to In production: "
                     "https://console.cloud.google.com/auth/audience"
                 )
             raise RuntimeError(self._response_error(response))

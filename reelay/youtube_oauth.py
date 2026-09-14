@@ -44,11 +44,11 @@ class CallbackHandler(BaseHTTPRequestHandler):
             "error": parameters.get("error", [""])[0],
         }
         body = (
-            "<!doctype html><meta charset='utf-8'>"
-            "<title>Reelay YouTube OAuth</title>"
-            "<h2>Авторизация получена</h2>"
-            "<p>Эту вкладку можно закрыть и вернуться в терминал.</p>"
-        ).encode()
+            b"<!doctype html><html lang='en'><meta charset='utf-8'>"
+            b"<title>Reelay YouTube OAuth</title>"
+            b"<h2>Authorization received</h2>"
+            b"<p>You can close this tab and return to the terminal.</p>"
+        )
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -62,7 +62,7 @@ class CallbackHandler(BaseHTTPRequestHandler):
 def _required_env(name):
     value = os.getenv(name, "").strip()
     if not value:
-        raise RuntimeError(f"Добавьте {name} в локальный .env")
+        raise RuntimeError(f"Add {name} to your local .env file")
     return value
 
 
@@ -79,7 +79,7 @@ def _wait_for_callback(server, timeout=300):
     while server.oauth_result is None and time.monotonic() < deadline:
         server.handle_request()
     if server.oauth_result is None:
-        raise RuntimeError("Время ожидания Google OAuth истекло")
+        raise RuntimeError("Google OAuth timed out")
     return server.oauth_result
 
 
@@ -87,7 +87,7 @@ def _json_response(response, service):
     try:
         payload = response.json()
     except ValueError as error:
-        raise RuntimeError(f"{service} вернул некорректный ответ") from error
+        raise RuntimeError(f"{service} returned an invalid response") from error
     if response.is_error:
         message = ""
         if isinstance(payload, dict):
@@ -118,15 +118,17 @@ def _exchange_code(client, client_id, client_secret, code, verifier, redirect_ur
     refresh_token = str(payload.get("refresh_token") or "")
     granted_scopes = set(str(payload.get("scope") or "").split())
     if not access_token:
-        raise RuntimeError("Google OAuth не вернул access token")
+        raise RuntimeError("Google OAuth did not return an access token")
     if not refresh_token:
         raise RuntimeError(
-            "Google OAuth не вернул refresh token; отзовите старый доступ "
-            "Reelay и повторите авторизацию"
+            "Google OAuth did not return a refresh token; revoke the previous "
+            "Reelay authorization and authorize again"
         )
     missing_scopes = SCOPES - granted_scopes
     if missing_scopes:
-        raise RuntimeError("Google не выдал scopes: " + ", ".join(sorted(missing_scopes)))
+        raise RuntimeError(
+            "Google did not grant these scopes: " + ", ".join(sorted(missing_scopes))
+        )
     return access_token, refresh_token
 
 
@@ -139,25 +141,25 @@ def _authorized_channel(client, access_token):
     payload = _json_response(response, "YouTube channels.list")
     channels = payload.get("items") or []
     if not channels:
-        raise RuntimeError("У выбранного Google-аккаунта нет YouTube-канала")
+        raise RuntimeError("The selected Google account does not have a YouTube channel")
     if len(channels) != 1:
         found = ", ".join(str(channel.get("id") or "unknown") for channel in channels)
         raise RuntimeError(
-            "OAuth вернул несколько каналов: "
-            f"{found}. Сделайте нужный канал каналом по умолчанию и повторите."
+            "OAuth returned multiple channels: "
+            f"{found}. Set the intended channel as your default and try again."
         )
     channel = channels[0]
     channel_id = str(channel.get("id") or "").strip()
     title = str((channel.get("snippet") or {}).get("title") or "").strip()
     if not channel_id or not title:
-        raise RuntimeError("YouTube не вернул имя и ID выбранного канала")
+        raise RuntimeError("YouTube did not return the selected channel name and ID")
     return channel_id, title
 
 
 def _write_env(refresh_token, channel_id):
     for value in (refresh_token, channel_id):
         if "\n" in value or "\r" in value:
-            raise RuntimeError("Некорректное значение для .env")
+            raise RuntimeError("Invalid value for .env")
 
     original = ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.exists() else ""
     updates = {
@@ -204,7 +206,7 @@ def _write_env(refresh_token, channel_id):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Получить локальный YouTube OAuth refresh token для Reelay"
+        description="Get a local YouTube OAuth refresh token for Reelay"
     )
     parser.add_argument("--expected-channel-id")
     args = parser.parse_args()
@@ -238,19 +240,19 @@ def main():
         )
     )
 
-    print("Открываю Google OAuth в системном браузере…")
+    print("Opening Google OAuth in your default browser…")
     if not webbrowser.open(authorization_url, new=1, autoraise=True):
         server.server_close()
-        raise RuntimeError("Не удалось открыть системный браузер")
+        raise RuntimeError("Could not open your default browser")
 
     try:
         result = _wait_for_callback(server)
     finally:
         server.server_close()
     if result["error"]:
-        raise RuntimeError(f"Google OAuth отклонён: {result['error']}")
+        raise RuntimeError(f"Google OAuth was denied: {result['error']}")
     if not result["code"]:
-        raise RuntimeError("Google OAuth не вернул authorization code")
+        raise RuntimeError("Google OAuth did not return an authorization code")
 
     with httpx.Client(timeout=30) as client:
         access_token, refresh_token = _exchange_code(
@@ -267,14 +269,16 @@ def main():
     print(f"YouTube channel ID: {channel_id}")
     expected = str(args.expected_channel_id or "").strip()
     if expected and not hmac.compare_digest(expected, channel_id):
-        raise RuntimeError(f"Ожидался канал {expected}, но выбран {channel_id}; .env не изменён")
+        raise RuntimeError(
+            f"Expected channel {expected}, but selected {channel_id}; .env was not changed"
+        )
     if not expected:
-        confirmation = input("Сохранить OAuth для этого канала? [y/N]: ").strip()
+        confirmation = input("Save OAuth credentials for this channel? [y/N]: ").strip()
         if confirmation.casefold() not in {"y", "yes", "д", "да"}:
-            raise RuntimeError("Отменено; .env не изменён")
+            raise RuntimeError("Cancelled; .env was not changed")
 
     _write_env(refresh_token, channel_id)
-    print("YouTube OAuth сохранён в локальный .env. Секреты не выведены.")
+    print("YouTube OAuth credentials saved to local .env. Secrets were not printed.")
 
 
 if __name__ == "__main__":

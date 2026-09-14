@@ -15,7 +15,7 @@ class PublicationNotificationTests(unittest.IsolatedAsyncioTestCase):
     async def test_primary_report_is_followed_by_hashtag_only_message_in_order(self):
         report = PublicationReport(
             outcome="published",
-            message="Готово #7:\nTikTok Inbox: publish-id",
+            message="Done #7:\nTikTok Inbox: publish-id",
             job_id=7,
             notify_owner=True,
             followup_messages=("#Reelay #one #two #three #four",),

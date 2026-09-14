@@ -49,23 +49,23 @@ class PublishingService:
 
     async def publish_next(self) -> PublicationReport:
         if self._lock.locked():
-            return self._skip("locked", "Публикация уже выполняется.")
+            return self._skip("locked", "Publishing is already in progress.")
 
         async with self._lock:
             if self.db.is_paused():
-                return self._skip("paused", "Очередь стоит на паузе.")
+                return self._skip("paused", "The queue is paused.")
 
             now = datetime.now(ZoneInfo(self.settings.timezone))
             if not self.settings.post_on_weekends and now.weekday() >= 5:
-                return self._skip("weekend", "Публикации по выходным отключены.")
+                return self._skip("weekend", "Weekend publishing is disabled.")
 
             job = self.db.next_queued()
             if not job:
-                return self._skip("empty_queue", "Очередь пуста.")
+                return self._skip("empty_queue", "The queue is empty.")
             if not self.db.mark_publishing(job["id"]):
                 return self._skip(
                     "claim_failed",
-                    f"Не удалось захватить задание #{job['id']}.",
+                    f"Could not claim job #{job['id']}.",
                     job_id=job["id"],
                 )
 
@@ -79,7 +79,7 @@ class PublishingService:
             return self._fail(
                 job,
                 None,
-                f"Локальный MP4 не найден: {video_path}",
+                f"Local MP4 not found: {video_path}",
             )
 
         watermarked_video_path = None
@@ -129,7 +129,7 @@ class PublishingService:
                         f"got {result.platform.value}"
                     )
                 if not _checkpoint_complete(platform, result.media_id):
-                    raise RuntimeError("Платформа не подтвердила завершение отправки")
+                    raise RuntimeError("The platform did not confirm upload completion")
             except Exception as error:
                 failures.append((platform, error))
                 continue
@@ -147,9 +147,9 @@ class PublishingService:
                 failures.append(
                     (
                         platform,
-                        f"Отправка вернула ID {result.media_id}, но сохранить ID в SQLite "
-                        f"не удалось: {error}. Дальнейшие отправки остановлены. "
-                        "Перед повтором проверьте публикацию на платформе и восстановите ID.",
+                        f"Upload returned ID {result.media_id}, but saving the ID in SQLite "
+                        f"failed: {error}. Further uploads have been stopped. "
+                        "Before retrying, check the post on the platform and restore its ID.",
                     )
                 )
                 return self._failures(job, failures, delivered, retry_safe=False)
@@ -165,12 +165,14 @@ class PublishingService:
         failed_platforms = {platform for platform, _error in failures}
         for platform in self.missing_platforms(job):
             if platform not in failed_platforms:
-                failures.append((platform, "Не сохранён ID завершённой отправки"))
+                failures.append((platform, "The completed upload ID was not saved"))
         if failures:
             return self._failures(job, failures, delivered)
 
         if not self.db.mark_completed(job_id):
-            return self._failures(job, [(None, "Не удалось завершить задание в SQLite")], delivered)
+            return self._failures(
+                job, [(None, "Could not mark the job as completed in SQLite")], delivered
+            )
 
         if self.settings.delete_after_publish:
             try:
@@ -245,24 +247,24 @@ class PublishingService:
                 detail=reason,
             )
         LOGGER.error("Publication failed for job #%s: %s", job["id"], stored_error)
-        lines = [f"Ошибка публикации #{job['id']}:"]
+        lines = [f"Publishing failed for #{job['id']}:"]
         for platform in self.publishers:
             media_id = job.get(PLATFORM_MEDIA_COLUMNS[platform.value])
             if _checkpoint_complete(platform, media_id):
                 if str(media_id).startswith("not-required-"):
-                    lines.append(f"{PLATFORM_LABELS[platform]}: отправка не требуется")
+                    lines.append(f"{PLATFORM_LABELS[platform]}: upload not required")
                 else:
-                    status = "отправлено" if platform in delivered else "отправлено ранее"
+                    status = "sent" if platform in delivered else "sent earlier"
                     displayed_id = _report_excerpt(media_id, REPORT_MEDIA_ID_LIMIT)
                     lines.append(f"{PLATFORM_LABELS[platform]}: {status} · {displayed_id}")
         lines.extend(
-            f"{PLATFORM_LABELS.get(platform, 'Reelay')}: ошибка · "
+            f"{PLATFORM_LABELS.get(platform, 'Reelay')}: error · "
             f"{_report_excerpt(reason, REPORT_ERROR_LIMIT)}"
             for platform, reason in reasons
         )
-        lines.append(f"Источник: {_report_excerpt(job['source_url'], REPORT_SOURCE_LIMIT)}")
+        lines.append(f"Source: {_report_excerpt(job['source_url'], REPORT_SOURCE_LIMIT)}")
         if retry_safe:
-            lines.append(f"Повторить только незавершённые отправки: /retry {job['id']}")
+            lines.append(f"Retry unfinished uploads only: /retry {job['id']}")
         followup_messages = success_followup_messages(job, delivered)
         if followup_messages:
             lines.extend(["", _tiktok_instructions()])
@@ -322,7 +324,7 @@ def _report_excerpt(value, limit):
 
 
 def success_message(job, publishers, *, include_tiktok_instructions=True):
-    lines = [f"Готово #{job['id']}:"]
+    lines = [f"Done #{job['id']}:"]
     for platform in publishers:
         media_id = job.get(PLATFORM_MEDIA_COLUMNS[platform.value])
         if media_id and not str(media_id).startswith("not-required-"):
@@ -336,8 +338,8 @@ def success_message(job, publishers, *, include_tiktok_instructions=True):
 
 def _tiktok_instructions():
     return (
-        "TikTok: откройте уведомление Inbox, вставьте хэштеги "
-        "из следующего сообщения и нажмите Publish."
+        "TikTok: open the Inbox notification, paste the hashtags "
+        "from the next message and tap Publish."
     )
 
 

@@ -300,7 +300,7 @@ def _restart_service(script=SERVICE_SCRIPT):
             "requested": True,
             "ok": False,
             "error": "service_script_missing",
-            "message": "Скрипт управления сервисом не найден.",
+            "message": "Service management script not found.",
         }
     try:
         result = subprocess.run(
@@ -316,32 +316,32 @@ def _restart_service(script=SERVICE_SCRIPT):
             "requested": True,
             "ok": False,
             "error": "restart_timeout",
-            "message": "Перезапуск не завершился за отведённое время.",
+            "message": "The service restart timed out.",
         }
     except OSError:
         return {
             "requested": True,
             "ok": False,
             "error": "restart_unavailable",
-            "message": "Не удалось запустить скрипт управления сервисом.",
+            "message": "Could not run the service management script.",
         }
     if result.returncode == 0:
         return {
             "requested": True,
             "ok": True,
-            "message": "Настройки сохранены, сервис перезапущен.",
+            "message": "Settings saved and service restarted.",
         }
 
     combined = (result.stdout + "\n" + result.stderr).lower()
     if "in progress" in combined:
         error = "publish_in_progress"
-        message = "Настройки сохранены, но публикация сейчас выполняется. Перезапустите позже."
+        message = "Settings saved, but publishing is in progress. Restart the service later."
     elif "not installed" in combined:
         error = "service_not_installed"
-        message = "Настройки сохранены, но LaunchAgent ещё не установлен."
+        message = "Settings saved, but the LaunchAgent is not installed yet."
     else:
         error = "restart_failed"
-        message = "Настройки сохранены, но сервис не удалось перезапустить."
+        message = "Settings saved, but the service could not be restarted."
     return {"requested": True, "ok": False, "error": error, "message": message}
 
 
@@ -491,7 +491,7 @@ class ConfigRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(restart, bool):
             self._json(
                 HTTPStatus.UNPROCESSABLE_ENTITY,
-                {"error": "validation_failed", "errors": {"restart": "Укажите true или false."}},
+                {"error": "validation_failed", "errors": {"restart": "Enter true or false."}},
             )
             return
         normalized, errors = normalize_updates(payload.get("values"))
@@ -635,7 +635,7 @@ def run(*, open_browser=True, port=PORT):
     except OSError as error:
         if error.errno != errno.EADDRINUSE:
             raise
-        print(f"Reelay Settings уже запущен: {url}")
+        print(f"Reelay Settings is already running: {url}")
         if open_browser:
             webbrowser.open(url)
         return

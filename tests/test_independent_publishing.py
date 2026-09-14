@@ -118,7 +118,7 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
                         self.assertIsNone(checkpoint)
                     else:
                         self.assertEqual(checkpoint, publisher.media_id)
-                        self.assertIn(f"отправлено · {checkpoint}", report.message)
+                        self.assertIn(f"sent · {checkpoint}", report.message)
                 self.assertTrue(self.video.is_file())
                 self.assertTrue(self.derivative.is_file())
                 self.assertIn(saved["source_url"], report.message)
@@ -137,7 +137,7 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
         saved = self.db.get_job(self.job_id)
         self.assertEqual(self.calls, list(Platform))
         for platform in failed:
-            self.assertIn(f"{PLATFORM_LABELS[platform]}: ошибка", report.message)
+            self.assertIn(f"{PLATFORM_LABELS[platform]}: error", report.message)
             self.assertIn(f"unavailable-{platform.value}", report.message)
             self.assertIn(f"unavailable-{platform.value}", saved["error"])
         with closing(self.db._connect()) as connection:
@@ -160,8 +160,8 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tiktok.snapshots[0]["instagram_media_id"], "instagram-id")
         self.assertEqual(tiktok.snapshots[0]["facebook_media_id"], "facebook-id")
         self.assertEqual(tiktok.snapshots[0]["threads_media_id"], "threads-id")
-        self.assertIn("TikTok Inbox: отправлено · tiktok-id", report.message)
-        self.assertIn("из следующего сообщения", report.message)
+        self.assertIn("TikTok Inbox: sent · tiktok-id", report.message)
+        self.assertIn("from the next message", report.message)
         self.assertEqual(report.followup_messages, ("#Reelay #one #two #three #four",))
 
     async def test_long_errors_fit_telegram_and_preserve_tiktok_followup_and_database_details(self):
@@ -181,8 +181,8 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
             report = await self.service.publish_next()
 
         self.assertLessEqual(len(report.message.encode("utf-16-le")) // 2, 4096)
-        self.assertIn("TikTok Inbox: отправлено · tiktok-id-", report.message)
-        self.assertIn("из следующего сообщения", report.message)
+        self.assertIn("TikTok Inbox: sent · tiktok-id-", report.message)
+        self.assertIn("from the next message", report.message)
         self.assertIn(f"/retry {self.job_id}", report.message)
         self.assertEqual(report.followup_messages, ("#Reelay #one #two #three #four",))
         saved = self.db.get_job(self.job_id)
@@ -235,7 +235,7 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(saved[PLATFORM_MEDIA_COLUMNS[platform.value]], publisher.media_id)
             self.assertEqual(len(publisher.requests), 2 if platform is Platform.YOUTUBE else 1)
         self.assertEqual(report.followup_messages, ())
-        self.assertNotIn("нажмите Publish", report.message)
+        self.assertNotIn("tap Publish", report.message)
         self.assertFalse(self.video.parent.exists())
 
     async def test_failed_retry_reports_previously_saved_ids_without_new_tiktok_instructions(self):
@@ -248,9 +248,9 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.calls, [Platform.YOUTUBE])
         self.assertEqual(report.outcome, "failed")
-        self.assertIn("TikTok Inbox: отправлено ранее · tiktok-id", report.message)
+        self.assertIn("TikTok Inbox: sent earlier · tiktok-id", report.message)
         self.assertEqual(report.followup_messages, ())
-        self.assertNotIn("нажмите Publish", report.message)
+        self.assertNotIn("tap Publish", report.message)
         self.assertTrue(self.video.is_file())
 
     async def test_pending_tiktok_upload_is_retried_and_not_reported_as_delivered_on_error(self):
@@ -265,7 +265,7 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved["tiktok_upload_url"], "https://upload.example.test/video")
         self.assertEqual(saved["status"], "failed")
         self.assertEqual(report.followup_messages, ())
-        self.assertNotIn("TikTok Inbox: отправлено", report.message)
+        self.assertNotIn("TikTok Inbox: sent", report.message)
         self.assertTrue(self.video.is_file())
 
     async def test_pending_result_is_not_a_completed_checkpoint_and_keeps_resume_state(self):
@@ -305,9 +305,7 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.outcome, "failed")
         for platform in Platform:
             if platform is not Platform.TIKTOK:
-                self.assertIn(
-                    f"{PLATFORM_LABELS[platform]}: ошибка · ffmpeg failed", report.message
-                )
+                self.assertIn(f"{PLATFORM_LABELS[platform]}: error · ffmpeg failed", report.message)
         self.assertEqual(report.followup_messages, ("#Reelay #one #two #three #four",))
         self.assertTrue(self.video.is_file())
 
@@ -331,7 +329,7 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
             self.calls, [platform for platform in Platform if platform is not Platform.YOUTUBE]
         )
         self.assertEqual(report.outcome, "failed")
-        self.assertIn("YouTube: ошибка · title generation failed", report.message)
+        self.assertIn("YouTube: error · title generation failed", report.message)
         self.assertTrue(report.followup_messages)
 
     async def test_cancellation_propagates_and_keeps_checkpoints_and_media(self):
@@ -355,8 +353,8 @@ class IndependentPublishingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, [Platform.INSTAGRAM])
         self.assertEqual(saved["status"], "failed")
         self.assertIsNone(saved["instagram_media_id"])
-        self.assertIn("Отправка вернула ID instagram-id", report.message)
-        self.assertIn("восстановите ID", report.message)
+        self.assertIn("Upload returned ID instagram-id", report.message)
+        self.assertIn("restore its ID", report.message)
         self.assertNotIn("/retry", report.message)
         self.assertTrue(self.video.is_file())
 

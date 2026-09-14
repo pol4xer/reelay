@@ -92,7 +92,7 @@ class CaptionCompositionTests(unittest.TestCase):
         message = success_message(job, [Platform.TIKTOK])
         followups = success_followup_messages(job, [Platform.TIKTOK])
 
-        self.assertEqual(message, "Готово #9:")
+        self.assertEqual(message, "Done #9:")
         self.assertEqual(followups, ())
 
     def test_disabled_tiktok_has_no_followup_even_with_checkpoint(self):
