@@ -1,6 +1,6 @@
 # Reelay
 
-[![CI](https://github.com/pol4xer/reelay/actions/workflows/ci.yml/badge.svg)](https://github.com/pol4xer/reelay/actions/workflows/ci.yml)
+[![CI](https://github.com/pol4xer/Reelay/actions/workflows/ci.yml/badge.svg)](https://github.com/pol4xer/Reelay/actions/workflows/ci.yml)
 
 **A self-hosted Telegram queue for scheduled short-form video publishing.**
 
@@ -91,8 +91,8 @@ You need Python 3.13+, [uv](https://docs.astral.sh/uv/), and FFmpeg/ffprobe on `
 developer tools; when Vision is unavailable, tagging falls back to captions and source metadata.
 
 ```bash
-git clone https://github.com/pol4xer/reelay.git
-cd reelay
+git clone https://github.com/pol4xer/Reelay.git
+cd Reelay
 make install
 cp .env.example .env
 make config-ui
